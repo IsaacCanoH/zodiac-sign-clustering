@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Panel de Análisis de Datos</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-body-tertiary">
+    <nav class="navbar navbar-expand-lg bg-dark navbar-dark shadow-sm">
+        <div class="container-xl py-2">
+            <a class="navbar-brand fw-semibold" href="{% url 'dashboard:index' %}">Panel de Análisis de Datos</a>
+            <span class="navbar-text d-none d-md-inline">Clasificación No Supervisada</span>
+        </div>
+    </nav>
+
+    <main class="container-xl py-4 py-lg-5">
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+            </div>
+        {% endfor %}
+
+        <header class="row align-items-center g-3 mb-4">
+            <div class="col-lg-8">
+                <p class="text-uppercase text-primary fw-semibold small mb-2">Espacio de trabajo</p>
+                <h1 class="h2 fw-bold mb-2">Dashboard de procesamiento</h1>
+                <p class="text-secondary mb-0">Administra los datos, el entrenamiento y los resultados desde un solo lugar.</p>
+            </div>
+            <div class="col-lg-4 text-lg-end">
+                <button class="btn btn-primary px-4" type="button" data-bs-toggle="modal" data-bs-target="#loadDataModal">
+                    Cargar conjunto de datos
+                </button>
+            </div>
+        </header>
+
+        <section class="row g-3 mb-4" aria-label="Resumen del proyecto">
+            <div class="col-sm-6 col-xl-3">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body">
+                        <p class="text-secondary small mb-2">Registros cargados</p>
+                        <p class="h3 fw-bold mb-1">{{ dataset.row_count|default:0 }}</p>
+                        {% if dataset %}
+                            <span class="badge text-bg-success">Disponible</span>
+                        {% else %}
+                            <span class="badge text-bg-secondary">Sin datos</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-xl-3">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body">
+                        <p class="text-secondary small mb-2">Variables detectadas</p>
+                        <p class="h3 fw-bold mb-1">{{ dataset.column_count|default:0 }}</p>
+                        <span class="text-secondary small">{% if dataset %}Columnas identificadas{% else %}Pendiente de carga{% endif %}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-xl-3">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body">
+                        <p class="text-secondary small mb-2">Estado del modelo</p>
+                        <p class="h5 fw-bold mb-2">No entrenado</p>
+                        <span class="badge text-bg-warning">Pendiente</span>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-xl-3">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body">
+                        <p class="text-secondary small mb-2">Modelos guardados</p>
+                        <p class="h3 fw-bold mb-1">0</p>
+                        <span class="text-secondary small">Disponibles para consulta</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom p-0">
+                <ul class="nav nav-tabs nav-fill border-0" id="dashboardTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active py-3" id="data-tab" data-bs-toggle="tab" data-bs-target="#data-pane" type="button" role="tab" aria-controls="data-pane" aria-selected="true">Datos cargados</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link py-3" id="statistics-tab" data-bs-toggle="tab" data-bs-target="#statistics-pane" type="button" role="tab" aria-controls="statistics-pane" aria-selected="false">Estadística descriptiva</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link py-3" id="training-tab" data-bs-toggle="tab" data-bs-target="#training-pane" type="button" role="tab" aria-controls="training-pane" aria-selected="false">Entrenamiento</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link py-3" id="results-tab" data-bs-toggle="tab" data-bs-target="#results-pane" type="button" role="tab" aria-controls="results-pane" aria-selected="false">Resultados</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link py-3" id="models-tab" data-bs-toggle="tab" data-bs-target="#models-pane" type="button" role="tab" aria-controls="models-pane" aria-selected="false">Modelos guardados</button>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="card-body p-3 p-lg-4">
+                <div class="tab-content" id="dashboardTabContent">
+                    <div class="tab-pane fade show active" id="data-pane" role="tabpanel" aria-labelledby="data-tab">
+                        {% include 'datasets/workspace.html' %}
+                    </div>
+
+                    <div class="tab-pane fade" id="statistics-pane" role="tabpanel" aria-labelledby="statistics-tab" tabindex="0">
+                        <h2 class="h5 fw-bold mb-1">Estadística descriptiva</h2>
+                        <p class="text-secondary mb-4">Resumen cuantitativo y distribución de las variables seleccionadas.</p>
+                        <div class="alert alert-light border mb-0" role="status">Las estadísticas estarán disponibles después de cargar un conjunto de datos.</div>
+                    </div>
+
+                    <div class="tab-pane fade" id="training-pane" role="tabpanel" aria-labelledby="training-tab" tabindex="0">
+                        <h2 class="h5 fw-bold mb-1">Entrenamiento del algoritmo</h2>
+                        <p class="text-secondary mb-4">Configura las variables y los parámetros del modelo de clasificación.</p>
+                        <button class="btn btn-primary" type="button" disabled>Configurar entrenamiento</button>
+                        <span class="text-secondary small ms-2">Primero carga los datos.</span>
+                    </div>
+
+                    <div class="tab-pane fade" id="results-pane" role="tabpanel" aria-labelledby="results-tab" tabindex="0">
+                        <h2 class="h5 fw-bold mb-1">Resultados del algoritmo</h2>
+                        <p class="text-secondary mb-4">Revisa los grupos, métricas y visualizaciones generadas por el modelo.</p>
+                        <div class="alert alert-light border mb-0" role="status">No hay resultados porque todavía no se ha ejecutado un entrenamiento.</div>
+                    </div>
+
+                    <div class="tab-pane fade" id="models-pane" role="tabpanel" aria-labelledby="models-tab" tabindex="0">
+                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+                            <div>
+                                <h2 class="h5 fw-bold mb-1">Modelos guardados</h2>
+                                <p class="text-secondary mb-0">Consulta y reutiliza modelos entrenados previamente.</p>
+                            </div>
+                            <button class="btn btn-outline-secondary" type="button" disabled>Importar modelo</button>
+                        </div>
+                        <div class="border rounded-3 bg-body-tertiary text-center p-5">
+                            <h3 class="h6 fw-bold">No existen modelos guardados</h3>
+                            <p class="text-secondary mb-0">Los modelos que guardes después de un entrenamiento aparecerán aquí.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="border-top bg-white py-3">
+        <div class="container-xl d-flex flex-column flex-sm-row justify-content-between gap-2 text-secondary small">
+            <span>Entorno académico</span>
+        </div>
+    </footer>
+
+    {% include 'datasets/upload_modal.html' %}
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    {% if open_upload_modal %}
+        <script>
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('loadDataModal')).show();
+        </script>
+    {% endif %}
+</body>
+</html>
