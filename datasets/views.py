@@ -16,12 +16,10 @@ class DatasetUploadView(View):
             return redirect(f"{reverse('dashboard:index')}?upload=invalid")
 
         replace_dataset(form.cleaned_data)
-        messages.success(request, 'El dataset se cargó correctamente.')
         return redirect('dashboard:index')
 
 
 class DatasetDeleteView(View):
     def post(self, request):
         remove_dataset()
-        messages.success(request, 'El dataset se eliminó correctamente.')
         return redirect('dashboard:index')
