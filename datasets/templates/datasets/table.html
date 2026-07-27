@@ -27,7 +27,7 @@
             <thead class="table-light sticky-top">
                 <tr>
                     <th scope="col" class="text-center text-secondary fw-normal">#</th>
-                    {% for column in dataset.columns %}
+                    {% for column in display_columns %}
                         <th scope="col" class="fw-semibold">{{ column }}</th>
                     {% endfor %}
                 </tr>
@@ -53,19 +53,19 @@
             <nav aria-label="Paginación del dataset">
                 <ul class="pagination pagination-sm flex-wrap mb-0">
                     <li class="page-item{% if not page_obj.has_previous %} disabled{% endif %}">
-                        <a class="page-link px-3 py-1" href="?page={% if page_obj.has_previous %}{{ page_obj.previous_page_number }}{% else %}1{% endif %}#dataset-table" aria-label="Página anterior">Anterior</a>
+                        <a class="page-link px-3 py-1" href="?{% if selected_category %}category={{ selected_category|urlencode }}&amp;{% endif %}representation={{ representation }}&amp;page={% if page_obj.has_previous %}{{ page_obj.previous_page_number }}{% else %}1{% endif %}#dataset-table" aria-label="Página anterior">Anterior</a>
                     </li>
                     {% for page_number in page_range %}
                         {% if page_number == page_obj.paginator.ELLIPSIS %}
                             <li class="page-item disabled"><span class="page-link px-3 py-1">{{ page_number }}</span></li>
                         {% else %}
                             <li class="page-item{% if page_number == page_obj.number %} active{% endif %}">
-                                <a class="page-link px-3 py-1" href="?page={{ page_number }}#dataset-table"{% if page_number == page_obj.number %} aria-current="page"{% endif %}>{{ page_number }}</a>
+                                <a class="page-link px-3 py-1" href="?{% if selected_category %}category={{ selected_category|urlencode }}&amp;{% endif %}representation={{ representation }}&amp;page={{ page_number }}#dataset-table"{% if page_number == page_obj.number %} aria-current="page"{% endif %}>{{ page_number }}</a>
                             </li>
                         {% endif %}
                     {% endfor %}
                     <li class="page-item{% if not page_obj.has_next %} disabled{% endif %}">
-                        <a class="page-link px-3 py-1" href="?page={% if page_obj.has_next %}{{ page_obj.next_page_number }}{% else %}{{ page_obj.paginator.num_pages }}{% endif %}#dataset-table" aria-label="Página siguiente">Siguiente</a>
+                        <a class="page-link px-3 py-1" href="?{% if selected_category %}category={{ selected_category|urlencode }}&amp;{% endif %}representation={{ representation }}&amp;page={% if page_obj.has_next %}{{ page_obj.next_page_number }}{% else %}{{ page_obj.paginator.num_pages }}{% endif %}#dataset-table" aria-label="Página siguiente">Siguiente</a>
                     </li>
                 </ul>
             </nav>

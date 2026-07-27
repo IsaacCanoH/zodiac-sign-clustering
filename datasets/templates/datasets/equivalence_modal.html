@@ -1,0 +1,123 @@
+{% if dataset %}
+<div class="modal fade" id="equivalenceModal" tabindex="-1" aria-labelledby="equivalenceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 class="modal-title fs-5" id="equivalenceModalLabel">Configurar equivalencias</h2>
+                    <p class="text-secondary small mb-0">Define el significado de los valores; el sistema no asignará etiquetas automáticamente.</p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <form
+                id="equivalenceForm"
+                data-save-url="{% url 'datasets:equivalence_save' %}"
+                data-delete-url="{% url 'datasets:equivalence_delete' 0 %}"
+                data-remove-url="{% url 'datasets:equivalence_remove_application' 0 %}"
+                novalidate
+            >
+                {% csrf_token %}
+                <div class="modal-body overflow-y-auto" style="max-height: calc(100vh - 12rem);">
+                    <div id="equivalenceFormAlert" class="alert d-none" role="alert"></div>
+
+                    <section class="border rounded-3 p-3 mb-4">
+                        <div class="row g-3 align-items-end">
+                            <div class="col-lg-7">
+                                <label for="savedConfiguration" class="form-label fw-semibold">Configuraciones guardadas</label>
+                                <select class="form-select" id="savedConfiguration">
+                                    <option value="">Nueva configuración</option>
+                                </select>
+                            </div>
+                            <div class="col-lg-5 d-flex flex-wrap gap-2">
+                                <button class="btn btn-outline-secondary" id="newConfigurationButton" type="button">Nueva</button>
+                                <button class="btn btn-outline-warning d-none" id="removeApplicationButton" type="button">Quitar aplicación</button>
+                                <button class="btn btn-outline-danger d-none" id="deleteConfigurationButton" type="button">Eliminar</button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="mb-4" aria-labelledby="referenceHeading">
+                        <div class="d-flex align-items-center gap-2 mb-3">
+                            <span class="badge rounded-pill text-bg-primary">1</span>
+                            <h3 class="h6 mb-0" id="referenceHeading">Columna de referencia</h3>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-lg-5">
+                                <label for="referenceColumn" class="form-label">Columna numérica</label>
+                                <select class="form-select" id="referenceColumn"></select>
+                            </div>
+                            <div class="col-lg-7">
+                                <div class="border rounded-3 bg-body-tertiary p-3 h-100">
+                                    <div class="row g-2 small">
+                                        <div class="col-sm-4"><span class="text-secondary d-block">Tipo detectado</span><span id="referenceType">—</span></div>
+                                        <div class="col-sm-4"><span class="text-secondary d-block">Registros válidos</span><span id="referenceValidCount">0</span></div>
+                                        <div class="col-sm-4"><span class="text-secondary d-block">Valores nulos</span><span id="referenceNullCount">0</span></div>
+                                        <div class="col-12"><span class="text-secondary d-block">Valores detectados</span><span id="referenceValues">—</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="mb-4" aria-labelledby="mappingHeading">
+                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="badge rounded-pill text-bg-primary">2</span>
+                                <h3 class="h6 mb-0" id="mappingHeading">Diccionario de equivalencias</h3>
+                            </div>
+                            <button class="btn btn-outline-primary btn-sm" id="addEquivalenceButton" type="button">Agregar valor</button>
+                        </div>
+                        <div class="table-responsive border rounded-3">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr><th>Valor cuantitativo</th><th>Significado cualitativo</th><th class="text-end">Acción</th></tr>
+                                </thead>
+                                <tbody id="equivalenceRows"></tbody>
+                            </table>
+                        </div>
+                        <div class="text-danger small mt-2 d-none" id="equivalenceError"></div>
+                    </section>
+
+                    <section aria-labelledby="columnsHeading">
+                        <div class="d-flex align-items-center gap-2 mb-3">
+                            <span class="badge rounded-pill text-bg-primary">3</span>
+                            <h3 class="h6 mb-0" id="columnsHeading">Nombre y columnas de aplicación</h3>
+                        </div>
+                        <div class="mb-3">
+                            <label for="configurationName" class="form-label fw-semibold">Nombre de la configuración</label>
+                            <input class="form-control" id="configurationName" maxlength="150" placeholder="Ej. Escala Likert de acuerdo">
+                            <div class="invalid-feedback" id="configurationNameError"></div>
+                        </div>
+                        <div class="row g-3 align-items-center mb-3">
+                            <div class="col-lg-5">
+                                <label for="columnSearch" class="form-label">Buscar columna</label>
+                                <input class="form-control" id="columnSearch" placeholder="Escribe un nombre">
+                            </div>
+                            <div class="col-lg-7 d-flex flex-wrap align-items-end gap-2">
+                                <button class="btn btn-outline-secondary btn-sm" id="selectCompatibleButton" type="button">Seleccionar compatibles</button>
+                                <button class="btn btn-outline-secondary btn-sm" id="clearColumnsButton" type="button">Deseleccionar todas</button>
+                                <div class="form-check form-switch ms-lg-auto">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="showAllNumericColumns">
+                                    <label class="form-check-label" for="showAllNumericColumns">Mostrar todas las numéricas</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-between small text-secondary mb-2">
+                            <span>Compatibilidad: valores observados ⊆ valores configurados</span>
+                            <span><strong id="selectedColumnCount">0</strong> seleccionadas</span>
+                        </div>
+                        <div class="list-group overflow-auto border rounded-3" id="numericColumnList" style="max-height: 16rem;"></div>
+                        <div class="text-danger small mt-2 d-none" id="columnsError"></div>
+                        <div class="alert alert-warning mt-3 d-none" id="compatibilityWarning" role="alert"></div>
+                    </section>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary" id="saveEquivalenceButton">Guardar y aplicar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{{ equivalence_data|json_script:"equivalence-data" }}
+{% endif %}
