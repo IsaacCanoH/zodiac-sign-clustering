@@ -1,8 +1,57 @@
-<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-end gap-3 mb-4">
     <div>
         <h2 class="h5 fw-bold mb-1">Conjunto de datos</h2>
         <p class="text-secondary mb-0">Consulta y administra la información importada.</p>
     </div>
+    {% if dataset %}
+        <div class="d-flex flex-wrap gap-2 align-items-center position-relative" style="z-index: 1030;">
+            <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#equivalenceModal">
+                Configurar equivalencias
+            </button>
+        {% if category_options %}
+            <div class="dropdown">
+                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    Categoría: {% if selected_category %}{{ selected_category_label }}{% else %}Todos{% endif %}
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li>
+                        <a class="dropdown-item{% if not selected_category %} active{% endif %}" href="?representation={{ representation }}#dataset-table">Todos</a>
+                    </li>
+                    {% for option in category_options %}
+                        <li>
+                            <a class="dropdown-item{% if option.value == selected_category %} active{% endif %}" href="?category={{ option.value|urlencode }}&amp;representation={{ representation }}#dataset-table">{{ option.label }}</a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+        {% if has_equivalence_applications %}
+                <div class="dropdown">
+                    <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        Vista:
+                        {% if representation == 'qualitative' %}Cualitativa
+                        {% elif representation == 'quantitative' %}Cuantitativa
+                        {% else %}Original{% endif %}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item{% if representation == 'original' %} active{% endif %}" href="?{% if selected_category %}category={{ selected_category|urlencode }}&amp;{% endif %}representation=original#dataset-table">Datos originales</a></li>
+                        <li><a class="dropdown-item{% if representation == 'quantitative' %} active{% endif %}" href="?{% if selected_category %}category={{ selected_category|urlencode }}&amp;{% endif %}representation=quantitative#dataset-table">Datos cuantitativos</a></li>
+                        <li><a class="dropdown-item{% if representation == 'qualitative' %} active{% endif %}" href="?{% if selected_category %}category={{ selected_category|urlencode }}&amp;{% endif %}representation=qualitative#dataset-table">Datos cualitativos</a></li>
+                    </ul>
+                </div>
+        {% endif %}
+        {% if selected_category %}
+            <a class="btn btn-success d-inline-flex align-items-center gap-2" href="{% url 'datasets:download' %}?category={{ selected_category|urlencode }}&amp;representation={{ representation }}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M.5 9.9a.5.5 0 0 1 .5.5V13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.6a.5.5 0 0 1 1 0V13a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.6a.5.5 0 0 1 .5-.5"/>
+                    <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/>
+                </svg>
+                <span>Descargar Excel</span>
+            </a>
+        {% endif %}
+        </div>
+    {% endif %}
 </div>
 
 {% include 'datasets/table.html' %}
+{% include 'datasets/equivalence_modal.html' %}

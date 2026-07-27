@@ -13,7 +13,7 @@
                 <div class="modal-body">
                     <label for="{{ dataset_form.file.id_for_label }}" class="form-label fw-semibold">{{ dataset_form.file.label }}</label>
                     {{ dataset_form.file }}
-                    <div class="form-text">Formato admitido: CSV en UTF-8, con un tamaño máximo de 10 MB.</div>
+                    <div class="form-text">Formatos admitidos: CSV en UTF-8 y Excel XLSX, con un tamaño máximo de 10 MB.</div>
                     {% if dataset %}
                         <div class="alert alert-warning mt-4 mb-0" role="note">Al cargar un archivo nuevo se reemplazará el dataset actual.</div>
                     {% endif %}
