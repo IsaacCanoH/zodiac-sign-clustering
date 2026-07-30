@@ -33,6 +33,8 @@ ALLOWED_HOSTS = []
 INSTALLED_APPS = [
     'dashboard',
     'datasets',
+    'descriptive_statistics',
+    'kmeans',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',

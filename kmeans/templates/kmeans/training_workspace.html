@@ -1,0 +1,151 @@
+{% if not dataset %}
+    <div class="border rounded-3 bg-body-tertiary text-center p-5">
+        <h2 class="h6 fw-bold">No hay datos para entrenar</h2>
+        <p class="text-secondary mb-0">Carga un dataset para configurar el algoritmo K-Means.</p>
+    </div>
+{% else %}
+    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
+        <div>
+            <h2 class="h5 fw-bold mb-1">Entrenamiento del algoritmo</h2>
+            <p class="text-secondary mb-0">Configura los grupos y las variables numéricas que participarán en el análisis.</p>
+        </div>
+        <div class="dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                Algoritmo: K-Means
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li><button class="dropdown-item active" type="button">K-Means</button></li>
+            </ul>
+        </div>
+    </div>
+
+    {% if training_category %}
+        <div class="alert alert-light border py-2" role="status">
+            El entrenamiento utilizará únicamente los registros de la categoría
+            <strong>{{ training_category_label }}</strong>.
+        </div>
+    {% endif %}
+
+    {% if kmeans_training_errors or kmeans_form.errors %}
+        <div class="alert alert-danger" role="alert">
+            <p class="fw-semibold mb-1">No fue posible iniciar el entrenamiento:</p>
+            <ul class="mb-0">
+                {% for error in kmeans_training_errors %}<li>{{ error.message }}</li>{% endfor %}
+                {% for field in kmeans_form %}
+                    {% for error in field.errors %}<li>{{ error }}</li>{% endfor %}
+                {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+
+    <form method="post" action="{% url 'kmeans:train' %}" id="kmeansTrainingForm">
+        {% csrf_token %}
+        <input type="hidden" name="algorithm" value="kmeans">
+        {% if training_category %}<input type="hidden" name="category" value="{{ training_category }}">{% endif %}
+
+        <div class="row g-4">
+            <div class="col-lg-4">
+                <div class="card h-100">
+                    <div class="card-header bg-white">
+                        <h3 class="h6 fw-bold mb-1">Cantidad de grupos</h3>
+                        <p class="small text-secondary mb-0">Elige cuántos clusters debe formar el algoritmo.</p>
+                    </div>
+                    <div class="card-body">
+                        {% if can_train %}
+                            <label class="form-label" for="clusterCount">Número de clusters</label>
+                            <select class="form-select" id="clusterCount" name="cluster_count">
+                                {% for option in cluster_options %}
+                                    <option value="{{ option }}"{% if kmeans_form.cluster_count.value|stringformat:"s" == option|stringformat:"s" %} selected{% endif %}>{{ option }} clusters</option>
+                                {% endfor %}
+                            </select>
+                            <p class="small text-secondary mt-2 mb-0">
+                                Disponible: de 2 a {{ max_clusters }} clusters para {{ sample_count }} registros.
+                            </p>
+                        {% else %}
+                            <div class="text-secondary">
+                                Se requieren al menos 3 registros y una variable numérica con valores diferentes.
+                            </div>
+                        {% endif %}
+
+                        <hr>
+                        <label class="form-label" for="comparisonColumn">
+                            Columna para comparar resultados
+                            <span class="text-secondary fw-normal">(opcional)</span>
+                        </label>
+                        <select class="form-select" id="comparisonColumn" name="comparison_column">
+                            <option value="">Sin comparación</option>
+                            {% for column in categorical_columns %}
+                                <option value="{{ column.name }}"{% if selected_comparison_column == column.name %} selected{% endif %}>
+                                    {{ column.name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                        <p class="small text-secondary mt-2 mb-0">
+                            Se utiliza únicamente para evaluar la composición de los clusters; no participa en el entrenamiento.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-8">
+                <div class="card h-100">
+                    <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        <div>
+                            <h3 class="h6 fw-bold mb-1">Columnas para el entrenamiento</h3>
+                            <p class="small text-secondary mb-0">Solo se muestran variables numéricas con valores diferentes.</p>
+                        </div>
+                        <div class="btn-group btn-group-sm" role="group" aria-label="Selección de columnas">
+                            <button class="btn btn-outline-secondary" id="selectAllKMeansColumns" type="button">Seleccionar todas</button>
+                            <button class="btn btn-outline-secondary" id="clearKMeansColumns" type="button">Deseleccionar todas</button>
+                        </div>
+                    </div>
+                    <div class="card-body overflow-auto" style="max-height: 22rem;">
+                        {% if numeric_columns %}
+                            <div class="row g-2">
+                                {% for column in numeric_columns %}
+                                    <div class="col-md-6">
+                                        <div class="form-check border rounded-2 p-3 ps-5 h-100">
+                                            <input
+                                                class="form-check-input kmeans-column"
+                                                type="checkbox"
+                                                name="columns"
+                                                value="{{ column.name }}"
+                                                id="kmeansColumn{{ forloop.counter }}"
+                                                {% if column.name in selected_kmeans_columns %}checked{% endif %}
+                                            >
+                                            <label class="form-check-label w-100" for="kmeansColumn{{ forloop.counter }}">
+                                                <span class="d-block">{{ column.name }}</span>
+                                                <span class="small text-secondary">
+                                                    {{ column.unique_count }} valores distintos
+                                                    {% if column.null_count %} · {{ column.null_count }} nulos{% endif %}
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="text-center text-secondary py-4">
+                                No se encontraron columnas numéricas compatibles con K-Means.
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="card-footer bg-white d-flex justify-content-between">
+                        <span class="small text-secondary" id="kmeansSelectedCount">0 columnas seleccionadas</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="alert alert-light border mt-4 mb-3">
+            Las variables se estandarizan antes del entrenamiento para evitar que una escala domine a las demás.
+            Los valores numéricos faltantes se sustituyen por la mediana de su columna.
+        </div>
+
+        <div class="d-flex justify-content-end">
+            <button class="btn btn-primary px-4" id="trainKMeansButton" type="submit" {% if not can_train %}disabled{% endif %}>
+                Entrenar K-Means
+            </button>
+        </div>
+    </form>
+{% endif %}

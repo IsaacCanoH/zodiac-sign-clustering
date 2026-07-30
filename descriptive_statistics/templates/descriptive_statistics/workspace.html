@@ -1,0 +1,184 @@
+{% if not dataset %}
+    <div class="border rounded-3 bg-body-tertiary text-center p-5">
+        <h2 class="h6 fw-bold">No hay datos para analizar</h2>
+        <p class="text-secondary mb-0">Carga un dataset para habilitar la estadística descriptiva.</p>
+    </div>
+{% else %}
+    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
+        <div>
+            <h2 class="h5 fw-bold mb-1">Estadística descriptiva</h2>
+            <p class="text-secondary mb-0">Selecciona una columna para analizar sus datos válidos.</p>
+        </div>
+        {% if selected_category %}
+            <span class="badge text-bg-light border px-3 py-2">Filtro activo: {{ selected_category_label }}</span>
+        {% endif %}
+    </div>
+
+    {% if statistics_columns %}
+        <form method="get" action="{% url 'dashboard:index' %}#statistics-pane" class="border rounded-3 bg-body-tertiary p-3 mb-4">
+            {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category }}">{% endif %}
+            <input type="hidden" name="representation" value="{{ representation }}">
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-lg-4">
+                    <label class="form-label fw-semibold" for="statisticsColumn">Columna para analizar</label>
+                    <select class="form-select" id="statisticsColumn" name="stats_column" onchange="this.form.submit()">
+                        <option value="">Selecciona una columna</option>
+                        <optgroup label="Columnas cuantitativas">
+                            {% for column in statistics_columns %}
+                                {% if column.kind == 'quantitative' %}
+                                    <option value="{{ column.name }}"{% if column.name == selected_statistics_column %} selected{% endif %}>{{ column.name }}</option>
+                                {% endif %}
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="Columnas cualitativas">
+                            {% for column in statistics_columns %}
+                                {% if column.kind == 'qualitative' %}
+                                    <option value="{{ column.name }}"{% if column.name == selected_statistics_column %} selected{% endif %}>{{ column.name }}</option>
+                                {% endif %}
+                            {% endfor %}
+                        </optgroup>
+                    </select>
+                </div>
+                {% comment %}
+                Comparación entre columnas deshabilitada temporalmente.
+                Para recuperarla, elimina este bloque de comentarios y cambia
+                la columna principal de "col-12 col-lg-4" a "col-lg-6".
+                {% if comparison_candidates %}
+                    <div class="col-lg-4">
+                        <label class="form-label" for="comparisonColumn">Comparar con otra columna numérica</label>
+                        <select class="form-select" id="comparisonColumn" name="compare_column">
+                            <option value="">Sin comparación</option>
+                            {% for column in comparison_candidates %}
+                                <option value="{{ column.name }}"{% if column.name == selected_comparison_column %} selected{% endif %}>{{ column.name }}{% if column.suggested %} — Sugerida{% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-lg-2">
+                        <button class="btn btn-outline-primary w-100" type="submit">Comparar</button>
+                    </div>
+                {% endif %}
+                {% endcomment %}
+            </div>
+        </form>
+    {% else %}
+        <div class="alert alert-light border">No se encontraron columnas útiles para análisis estadístico.</div>
+    {% endif %}
+
+    {% if statistics_analysis %}
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+            <h3 class="h5 mb-0">{{ statistics_analysis.column }}</h3>
+            <span class="badge {% if statistics_analysis.kind == 'quantitative' %}text-bg-primary{% else %}text-bg-info{% endif %}">
+                {% if statistics_analysis.kind == 'quantitative' %}Cuantitativa{% else %}Cualitativa{% endif %}
+            </span>
+            <span class="text-secondary small">{{ statistics_analysis.valid_count }} válidos · {{ statistics_analysis.null_count }} nulos</span>
+            <a
+                class="btn btn-outline-danger btn-sm ms-sm-auto"
+                href="{% url 'descriptive_statistics:download_pdf' %}?stats_column={{ selected_statistics_column|urlencode }}{% if selected_category %}&amp;category={{ selected_category|urlencode }}{% endif %}"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-file-earmark-pdf me-1" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5z"/>
+                    <path d="M4.603 14.087a.81.81 0 0 1-.13-.008.732.732 0 0 1-.202-.052.706.706 0 0 1-.241-.182.639.639 0 0 1-.162-.45c0-.174.041-.328.123-.46a.76.76 0 0 1 .35-.334c.152-.082.34-.123.564-.123.221 0 .405.04.552.12a.746.746 0 0 1 .341.328c.079.139.118.302.118.49 0 .195-.04.36-.12.496a.746.746 0 0 1-.343.324c-.148.075-.33.112-.547.112-.116 0-.217-.011-.303-.033v-.228zm.279-.977c-.12 0-.21.028-.27.084-.06.056-.09.136-.09.24 0 .102.03.18.09.234.06.055.15.082.27.082.117 0 .205-.027.264-.082.06-.055.09-.133.09-.234 0-.104-.03-.184-.09-.24-.059-.056-.147-.084-.264-.084z"/>
+                </svg>
+                Descargar PDF
+            </a>
+        </div>
+
+        {% if statistics_analysis.kind == 'quantitative' %}
+            <section class="row g-3 mb-4" aria-label="Medidas descriptivas">
+                <div class="col-6 col-md-3"><div class="card h-100"><div class="card-body"><span class="text-secondary small">Media</span><p class="h5 mb-0">{{ statistics_analysis.metrics.mean }}</p></div></div></div>
+                <div class="col-6 col-md-3"><div class="card h-100"><div class="card-body"><span class="text-secondary small">Mediana</span><p class="h5 mb-0">{{ statistics_analysis.metrics.median }}</p></div></div></div>
+                <div class="col-6 col-md-3"><div class="card h-100"><div class="card-body"><span class="text-secondary small">Moda</span><p class="h6 mb-0">{{ statistics_analysis.metrics.mode }}</p></div></div></div>
+                <div class="col-6 col-md-3"><div class="card h-100"><div class="card-body"><span class="text-secondary small">Rango</span><p class="h5 mb-0">{{ statistics_analysis.metrics.range }}</p></div></div></div>
+                <div class="col-6 col-md-3"><div class="card h-100"><div class="card-body"><span class="text-secondary small">Mínimo</span><p class="h5 mb-0">{{ statistics_analysis.metrics.minimum }}</p></div></div></div>
+                <div class="col-6 col-md-3"><div class="card h-100"><div class="card-body"><span class="text-secondary small">Máximo</span><p class="h5 mb-0">{{ statistics_analysis.metrics.maximum }}</p></div></div></div>
+                <div class="col-6 col-md-3"><div class="card h-100"><div class="card-body"><span class="text-secondary small">Varianza poblacional</span><p class="h5 mb-0">{{ statistics_analysis.metrics.variance }}</p></div></div></div>
+                <div class="col-6 col-md-3"><div class="card h-100"><div class="card-body"><span class="text-secondary small">Desviación estándar</span><p class="h5 mb-0">{{ statistics_analysis.metrics.standard_deviation }}</p></div></div></div>
+            </section>
+        {% else %}
+            <section class="row g-3 mb-4">
+                <div class="col-sm-4"><div class="card h-100"><div class="card-body"><span class="text-secondary small">Moda</span><p class="h5 mb-0">{{ statistics_analysis.mode }}</p></div></div></div>
+                <div class="col-sm-4"><div class="card h-100"><div class="card-body"><span class="text-secondary small">Categorías distintas</span><p class="h5 mb-0">{{ statistics_analysis.unique_count }}</p></div></div></div>
+                <div class="col-sm-4"><div class="card h-100"><div class="card-body"><span class="text-secondary small">Registros válidos</span><p class="h5 mb-0">{{ statistics_analysis.valid_count }}</p></div></div></div>
+            </section>
+        {% endif %}
+
+        <section class="card mb-4">
+            <div class="card-header bg-white"><h3 class="h6 mb-0">Tabla de frecuencias</h3></div>
+            <div class="table-responsive overflow-auto" style="max-height: 22rem;">
+                <table class="table table-sm table-bordered align-middle mb-0">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th>
+                                {% if statistics_analysis.grouped_frequencies %}
+                                    Intervalo
+                                {% elif statistics_analysis.kind == 'quantitative' %}
+                                    Valor
+                                {% else %}
+                                    Categoría
+                                {% endif %}
+                            </th>
+                            {% if statistics_analysis.kind == 'quantitative' %}
+                                {% if not statistics_analysis.grouped_frequencies %}<th>Equivalencia</th>{% endif %}
+                            {% endif %}
+                            <th>Frecuencia</th>
+                            <th>Frecuencia relativa</th>
+                            <th>Frecuencia acumulada</th>
+                            <th>Porcentaje</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in statistics_analysis.frequency_rows %}
+                            <tr>
+                                <td>{{ row.value }}</td>
+                                {% if statistics_analysis.kind == 'quantitative' %}
+                                    {% if not statistics_analysis.grouped_frequencies %}<td>{{ row.label|default:"—" }}</td>{% endif %}
+                                {% endif %}
+                                <td>{{ row.frequency }}</td>
+                                <td>{{ row.relative_frequency }}</td>
+                                <td>{{ row.cumulative_frequency }}</td>
+                                <td>{{ row.percentage }}%</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="row g-4 mb-4">
+            <div class="col-xl-6">
+                <div class="card h-100">
+                    <div class="card-header bg-white"><h3 class="h6 mb-0">{% if statistics_analysis.kind == 'quantitative' %}Histograma{% else %}Gráfica de barras{% endif %}</h3></div>
+                    <div class="card-body"><canvas id="primaryStatisticsChart" aria-label="Gráfica principal"></canvas></div>
+                </div>
+            </div>
+            <div class="col-xl-6">
+                <div class="card h-100">
+                    <div class="card-header bg-white"><h3 class="h6 mb-0">{% if statistics_analysis.kind == 'quantitative' %}Polígono de frecuencias{% else %}Gráfica de pastel{% endif %}</h3></div>
+                    <div class="card-body"><canvas id="secondaryStatisticsChart" aria-label="Gráfica secundaria"></canvas></div>
+                </div>
+            </div>
+        </section>
+
+        {% comment %}
+        Resultado de la comparación deshabilitado temporalmente junto con sus controles.
+        {% if scatter_analysis %}
+            <section class="card">
+                <div class="card-header bg-white d-flex flex-wrap justify-content-between gap-2">
+                    <h3 class="h6 mb-0">Dispersión: {{ scatter_analysis.first_column }} y {{ scatter_analysis.second_column }}</h3>
+                    <span class="text-secondary small">{{ scatter_analysis.pair_count }} pares · Correlación: {{ scatter_analysis.correlation|default:"No calculable" }}</span>
+                </div>
+                <div class="card-body"><canvas id="scatterStatisticsChart" aria-label="Gráfica de dispersión"></canvas></div>
+            </section>
+        {% endif %}
+        {% endcomment %}
+
+        {{ statistics_chart_data|json_script:"statistics-chart-data" }}
+    {% elif selected_statistics_column %}
+        <div class="alert alert-warning">La columna seleccionada no contiene suficientes datos válidos.</div>
+    {% else %}
+        <div class="border rounded-3 text-center p-5">
+            <h3 class="h6">Selecciona una columna</h3>
+            <p class="text-secondary mb-0">Las medidas y gráficas aparecerán después de elegir una variable.</p>
+        </div>
+    {% endif %}
+{% endif %}

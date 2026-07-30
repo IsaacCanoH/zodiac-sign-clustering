@@ -20,6 +20,7 @@ def replace_dataset(cleaned_data):
                 'records': cleaned_data['records'],
             },
         )[0]
+        dataset.kmeans_runs.all().delete()
         dataset.equivalence_applications.all().delete()
         return dataset
 
