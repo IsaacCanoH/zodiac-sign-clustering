@@ -6,6 +6,8 @@ from .views import (
     KMeansExportView,
     KMeansImportView,
     KMeansResetView,
+    KMeansRetrainView,
+    KMeansSaveView,
     KMeansTrainingView,
 )
 
@@ -18,5 +20,7 @@ urlpatterns = [
     path('<int:pk>/exportar/', KMeansExportView.as_view(), name='export'),
     path('importar/', KMeansImportView.as_view(), name='import'),
     path('<int:pk>/activar/', KMeansActivateView.as_view(), name='activate'),
+    path('<int:pk>/reentrenar/', KMeansRetrainView.as_view(), name='retrain'),
+    path('<int:pk>/guardar/', KMeansSaveView.as_view(), name='save'),
     path('<int:pk>/eliminar/', KMeansDeleteView.as_view(), name='delete'),
 ]

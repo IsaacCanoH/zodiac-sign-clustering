@@ -2,10 +2,12 @@ from django.views.generic import TemplateView
 
 from datasets.components import build_workspace_context
 from classified_data.components import build_classified_workspace_context
-from datasets.model_validation import dataset_fingerprint
+from datasets.model_validation import model_compatibility
 from dbscan.components import build_dbscan_workspace_context
+from dbscan.models import DBSCANRun
 from descriptive_statistics.components import build_statistics_workspace_context
 from kmeans.components import build_kmeans_workspace_context
+from kmeans.models import KMeansRun
 
 
 class DashboardView(TemplateView):
@@ -43,21 +45,23 @@ class DashboardView(TemplateView):
 
         # All saved runs for the models pane
         dataset = context.get('dataset')
-        context['all_kmeans_runs'] = (
-            list(dataset.kmeans_runs.all()) if dataset else []
-        )
-        context['all_dbscan_runs'] = (
-            list(dataset.dbscan_runs.all()) if dataset else []
-        )
-        current_fingerprint = dataset_fingerprint(dataset) if dataset else ''
+        # Saved models form an independent catalogue. They must remain visible
+        # even when their source dataset is removed or replaced.
+        context['all_kmeans_runs'] = list(KMeansRun.objects.filter(is_saved=True))
+        context['all_dbscan_runs'] = list(DBSCANRun.objects.filter(is_saved=True))
+        requested_category = context.get('selected_category', '')
+        requested_category_column = context.get('category_column', '')
+        context['model_requested_category'] = requested_category
         context['all_saved_models'] = sorted(
             [
                 *[
                     {
                         'algorithm': 'kmeans',
                         'run': run,
-                        'compatible': (
-                            run.dataset_fingerprint == current_fingerprint
+                        **model_compatibility(
+                            dataset, run,
+                            requested_category=requested_category,
+                            requested_category_column=requested_category_column,
                         ),
                     }
                     for run in context['all_kmeans_runs']
@@ -66,8 +70,10 @@ class DashboardView(TemplateView):
                     {
                         'algorithm': 'dbscan',
                         'run': run,
-                        'compatible': (
-                            run.dataset_fingerprint == current_fingerprint
+                        **model_compatibility(
+                            dataset, run,
+                            requested_category=requested_category,
+                            requested_category_column=requested_category_column,
                         ),
                     }
                     for run in context['all_dbscan_runs']
@@ -76,6 +82,7 @@ class DashboardView(TemplateView):
             key=lambda item: item['run'].created_at,
             reverse=True,
         )
+        context['saved_model_count'] = len(context['all_saved_models'])
 
         # Import error message (set by import views via session)
         context['model_import_error'] = self.request.session.pop(

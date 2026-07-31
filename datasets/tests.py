@@ -16,9 +16,35 @@ from .models import (
     DatasetEquivalenceApplication,
     EquivalenceConfiguration,
 )
+from .services import filter_dataset_by_category
 
 
 class DatasetViewTests(TestCase):
+    def test_user_can_select_any_low_cardinality_filter_column(self):
+        dataset = Dataset.objects.create(
+            pk=1, source_name='generico.csv',
+            columns=['Grupo', 'valor'],
+            records=[
+                {'Grupo': 'A' if index < 3 else 'B', 'valor': str(index)}
+                for index in range(6)
+            ],
+        )
+
+        filtered = filter_dataset_by_category(dataset, 'a', 'Grupo')
+
+        self.assertEqual(filtered['category_column'], 'Grupo')
+        self.assertEqual(len(filtered['filtered_records']), 3)
+        self.assertEqual(
+            [item['name'] for item in filtered['category_columns']],
+            ['Grupo'],
+        )
+        response = self.client.get(
+            reverse('dashboard:index'),
+            {'category_column': 'Grupo', 'category': 'a'},
+        )
+        self.assertContains(response, 'Columna: Grupo')
+        self.assertContains(response, 'category_column=Grupo')
+
     def test_csv_upload_persists_columns_and_records(self):
         csv_file = SimpleUploadedFile(
             'personas.csv',

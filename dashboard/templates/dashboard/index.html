@@ -78,11 +78,7 @@
                     <div class="card-body">
                         <p class="text-secondary small mb-2">Modelos guardados</p>
                         <p class="h3 fw-bold mb-1">
-                            {% if dataset %}
-                                {{ dataset.kmeans_runs.count|add:dataset.dbscan_runs.count }}
-                            {% else %}
-                                0
-                            {% endif %}
+                            {{ saved_model_count }}
                         </p>
                         <span class="text-secondary small">Disponibles para consulta</span>
                     </div>

@@ -57,6 +57,27 @@ class DBSCANServiceTests(TestCase):
         self.assertGreater(run.silhouette, 0.9)
         self.assertEqual(run.silhouette_sample_count, 6)
 
+    def test_retraining_is_versioned_full_refit_with_saved_state(self):
+        parent = self.train()
+        parent.is_saved = True
+        parent.save(update_fields=['is_saved'])
+        self.dataset.records.extend([
+            {'x': '0.08', 'y': '0.02', 'categoria': 'A'},
+            {'x': '10.08', 'y': '10.02', 'categoria': 'B'},
+        ])
+        self.dataset.save(update_fields=['records'])
+
+        response = self.client.post(reverse('dbscan:retrain', args=[parent.pk]))
+
+        self.assertEqual(response.status_code, 302)
+        child = DBSCANRun.objects.exclude(pk=parent.pk).get()
+        self.assertEqual(child.parent_run, parent)
+        self.assertEqual(child.version, 2)
+        self.assertEqual(child.new_record_count, 2)
+        self.assertEqual(child.estimator_state['strategy'], 'full_refit')
+        self.assertIn('components', child.estimator_state)
+        self.assertIn('changed_cluster_count', child.change_summary)
+
     def test_all_noise_is_reported_as_a_correctable_error(self):
         with self.assertRaisesMessage(
             DBSCANTrainingError,

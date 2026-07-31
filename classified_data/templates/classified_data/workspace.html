@@ -73,9 +73,7 @@
         <p class="text-secondary mb-3">
             Ejecuta un entrenamiento de K-Means o DBSCAN para consultar aquí las filas analizadas y su cluster.
         </p>
-        {% if dataset %}
-            <a class="btn btn-primary" href="{% url 'dashboard:index' %}#training-pane">Ir a entrenamiento</a>
-        {% else %}
+        {% if not dataset %}
             <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#loadDataModal">
                 Cargar dataset
             </button>

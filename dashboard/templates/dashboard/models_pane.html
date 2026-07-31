@@ -16,7 +16,7 @@
         <h2 class="h5 fw-bold mb-1">Modelos guardados</h2>
         <p class="text-secondary mb-0">
             Consulta, activa, descarga o importa modelos entrenados.
-            Al activar un modelo, sus resultados se muestran sin volver a entrenar.
+            Activa resultados exactos o reentrena una versión compatible con datos nuevos.
         </p>
     </div>
     <button class="btn btn-outline-primary flex-shrink-0" type="button"
@@ -29,7 +29,7 @@
     <div class="border rounded-3 bg-body-tertiary text-center p-5">
         <h3 class="h6 fw-bold">No existen modelos guardados</h3>
         <p class="text-secondary mb-0">
-            Entrena un modelo con K-Means o DBSCAN y aparecerá aquí automáticamente.
+            Entrena un modelo y, después de revisar sus resultados, pulsa “Guardar modelo”.
         </p>
     </div>
 {% else %}
@@ -53,15 +53,19 @@
                                 {% else %}
                                     <span class="badge text-bg-secondary">DBSCAN</span>
                                 {% endif %}
-                                {% if item.compatible %}
-                                    <span class="badge text-bg-success">Compatible</span>
+                                {% if item.exact %}
+                                    <span class="badge text-bg-success">Dataset exacto</span>
+                                {% elif item.compatible %}
+                                    <span class="badge text-bg-info">Reentrenable</span>
                                 {% else %}
-                                    <span class="badge text-bg-warning">Otro dataset</span>
+                                    <span class="badge text-bg-warning" title="{{ item.reasons|join:' ' }}">Otro dataset · No compatible</span>
                                 {% endif %}
                             </div>
 
                             <div class="card-body py-3">
-                                <p class="small text-secondary mb-2">{{ run.created_at|date:"d/m/Y H:i" }}</p>
+                                <h4 class="h6 fw-bold mb-1">{{ run.name|default:"Modelo sin nombre" }} <span class="badge text-bg-light border">v{{ run.version }}</span></h4>
+                                {% if run.topic %}<p class="small mb-1"><strong>Tema:</strong> {{ run.topic }}</p>{% endif %}
+                                <p class="small text-secondary mb-2">Entrenado: {{ run.created_at|date:"d/m/Y H:i" }}</p>
                                 <p class="small text-truncate mb-2" title="{{ run.dataset_source_name }}">
                                     {{ run.dataset_source_name }}
                                 </p>
@@ -85,16 +89,43 @@
                                     {% endif %}
                                     <dt class="col-7 text-secondary fw-normal">Variables</dt>
                                     <dd class="col-5 fw-semibold mb-0">{{ run.selected_columns|length }}</dd>
+                                    <dt class="col-7 text-secondary fw-normal">Filtro</dt>
+                                    <dd class="col-5 fw-semibold mb-0">{% if run.category_filter %}{{ run.category_column|default:"categoria" }} = {{ run.category_label }}{% else %}Todos{% endif %}</dd>
+                                    <dt class="col-7 text-secondary fw-normal">Evaluación</dt>
+                                    <dd class="col-5 fw-semibold mb-0">{{ run.comparison_column|default:"Ninguna" }}</dd>
+                                    {% if run.new_record_count %}
+                                        <dt class="col-7 text-secondary fw-normal">Datos nuevos</dt>
+                                        <dd class="col-5 fw-semibold mb-0">+{{ run.new_record_count }}</dd>
+                                    {% endif %}
                                 </dl>
+                                <details class="small mt-2">
+                                    <summary>Metadatos completos</summary>
+                                    <div class="mt-2"><strong>Variables:</strong> {{ run.selected_columns|join:", " }}</div>
+                                    {% if run.description %}<div><strong>Notas:</strong> {{ run.description }}</div>{% endif %}
+                                    <div><strong>Archivo:</strong> {{ run.dataset_source_name }}</div>
+                                    <div><strong>Registros fuente:</strong> {{ run.source_row_count|default:run.sample_count }}</div>
+                                    <div><strong>Scikit-learn:</strong> {{ run.library_versions.scikit_learn|default:"Modelo heredado" }}</div>
+                                </details>
                             </div>
 
                             <div class="card-footer bg-white d-flex flex-wrap gap-1">
                                 {% if item.algorithm == 'kmeans' %}
                                     <form method="post" action="{% url 'kmeans:activate' run.pk %}">
                                         {% csrf_token %}
+                                        <input type="hidden" name="category" value="{{ model_requested_category }}">
+                                        <input type="hidden" name="category_column" value="{{ category_column }}">
                                         <button class="btn btn-sm btn-primary" type="submit"
-                                            {% if not item.compatible %}disabled title="Carga el dataset original para activar este modelo"{% endif %}>
+                                            {% if not item.exact or not item.compatible %}disabled title="{{ item.reasons|join:' ' }}{% if not item.reasons %}Activar requiere el dataset exacto.{% endif %}"{% endif %}>
                                             Activar
+                                        </button>
+                                    </form>
+                                    <form method="post" action="{% url 'kmeans:retrain' run.pk %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="category" value="{{ model_requested_category }}">
+                                        <input type="hidden" name="category_column" value="{{ category_column }}">
+                                        <button class="btn btn-sm btn-success" type="submit"
+                                            {% if not item.compatible %}disabled title="{{ item.reasons|join:' ' }}"{% endif %}>
+                                            Reentrenar
                                         </button>
                                     </form>
                                     <a class="btn btn-sm btn-outline-secondary"
@@ -107,9 +138,20 @@
                                 {% else %}
                                     <form method="post" action="{% url 'dbscan:activate' run.pk %}">
                                         {% csrf_token %}
+                                        <input type="hidden" name="category" value="{{ model_requested_category }}">
+                                        <input type="hidden" name="category_column" value="{{ category_column }}">
                                         <button class="btn btn-sm btn-primary" type="submit"
-                                            {% if not item.compatible %}disabled title="Carga el dataset original para activar este modelo"{% endif %}>
+                                            {% if not item.exact or not item.compatible %}disabled title="{{ item.reasons|join:' ' }}{% if not item.reasons %}Activar requiere el dataset exacto.{% endif %}"{% endif %}>
                                             Activar
+                                        </button>
+                                    </form>
+                                    <form method="post" action="{% url 'dbscan:retrain' run.pk %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="category" value="{{ model_requested_category }}">
+                                        <input type="hidden" name="category_column" value="{{ category_column }}">
+                                        <button class="btn btn-sm btn-success" type="submit"
+                                            {% if not item.compatible %}disabled title="{{ item.reasons|join:' ' }}"{% endif %}>
+                                            Reentrenar
                                         </button>
                                     </form>
                                     <a class="btn btn-sm btn-outline-secondary"
@@ -148,6 +190,17 @@
                     <label class="form-label fw-semibold" for="modelFileInput">Archivo del modelo</label>
                     <input class="form-control" type="file" id="modelFileInput"
                         name="model_file" accept=".json" required>
+                    <fieldset class="mt-3">
+                        <legend class="fs-6 fw-semibold">Modo de importación</legend>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="import_mode" id="importExact" value="exact" checked>
+                            <label class="form-check-label" for="importExact">Restaurar resultados — requiere el dataset exacto</label>
+                        </div>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="radio" name="import_mode" id="importRetrain" value="retrain">
+                            <label class="form-check-label" for="importRetrain">Importar para reentrenar — acepta un dataset ampliado con el mismo esquema y tipos</label>
+                        </div>
+                    </fieldset>
                     <p class="small text-secondary mt-2 mb-0">
                         Solo se aceptan archivos <code>.json</code> generados por esta aplicación.
                     </p>

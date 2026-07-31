@@ -12,7 +12,7 @@
             </div>
             <p class="text-secondary mb-0">
                 Generado el {{ dbscan_run.created_at|date:"d/m/Y H:i" }}
-                {% if dbscan_run.category_filter %} · Filtro: {{ dbscan_run.category_label }}{% endif %}
+                {% if dbscan_run.category_filter %} · Filtro: {{ dbscan_run.category_column }} = {{ dbscan_run.category_label }}{% endif %}
             </p>
         </div>
         <div class="d-flex flex-wrap gap-2">
@@ -174,4 +174,42 @@
             </div>
         </div>
     </div>
+{% endif %}
+{% if dbscan_run.parent_run %}
+<div class="alert alert-info border">
+    <h3 class="h6 fw-bold">Reentrenamiento v{{ dbscan_run.version }} de “{{ dbscan_run.parent_run.name|default:"Modelo DBSCAN" }}”</h3>
+    <div class="row small">
+        <div class="col-md-3">Registros: {{ dbscan_run.change_summary.previous_sample_count }} → {{ dbscan_run.change_summary.current_sample_count }}</div>
+        <div class="col-md-3">Nuevos: {{ dbscan_run.new_record_count }}</div>
+        <div class="col-md-3">Cambios de cluster: {{ dbscan_run.change_summary.changed_cluster_count }} ({{ dbscan_run.change_summary.changed_cluster_percentage|default:"—" }}%)</div>
+        <div class="col-md-3">Ruido: {{ dbscan_run.change_summary.previous_metrics.noise_count }} → {{ dbscan_run.noise_count }}</div>
+    </div>
+</div>
+{% endif %}
+{% if dbscan_run %}
+<section class="card border-primary mt-4">
+    <div class="card-body">
+        {% if dbscan_run.is_saved %}
+            <div class="d-flex align-items-center justify-content-between gap-3">
+                <div>
+                    <h3 class="h5 fw-bold mb-1">Modelo guardado</h3>
+                    <p class="text-secondary mb-0">Este resultado ya forma parte del catálogo de modelos.</p>
+                </div>
+                <button class="btn btn-success" type="button" disabled>Modelo guardado</button>
+            </div>
+        {% else %}
+            <h3 class="h5 fw-bold mb-1">Guardar este modelo</h3>
+            <p class="text-secondary">Este resultado es provisional. Si entrenas nuevamente sin guardarlo, será reemplazado.</p>
+            <form method="post" action="{% url 'dbscan:save' dbscan_run.pk %}">
+                {% csrf_token %}
+                <div class="row g-3">
+                    <div class="col-md-6"><label class="form-label" for="saveDbscanName">Nombre</label><input class="form-control" id="saveDbscanName" name="name" maxlength="150" required value="{{ dbscan_run.name }}"></div>
+                    <div class="col-md-6"><label class="form-label" for="saveDbscanTopic">Tema</label><input class="form-control" id="saveDbscanTopic" name="topic" maxlength="150" value="{{ dbscan_run.topic }}"></div>
+                    <div class="col-12"><label class="form-label" for="saveDbscanDescription">Descripción</label><textarea class="form-control" id="saveDbscanDescription" name="description" rows="2">{{ dbscan_run.description }}</textarea></div>
+                    <div class="col-12 text-end"><button class="btn btn-primary px-4" type="submit">Guardar modelo</button></div>
+                </div>
+            </form>
+        {% endif %}
+    </div>
+</section>
 {% endif %}

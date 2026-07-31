@@ -27,6 +27,16 @@
         {% csrf_token %}
         <input type="hidden" name="algorithm" value="kmeans">
         {% if training_category %}<input type="hidden" name="category" value="{{ training_category }}">{% endif %}
+        {% if category_column %}<input type="hidden" name="category_column" value="{{ category_column }}">{% endif %}
+
+        <div class="card mb-4">
+            <div class="card-header bg-white"><h3 class="h6 fw-bold mb-0">Metadatos del modelo</h3></div>
+            <div class="card-body row g-3">
+                <div class="col-md-6"><label class="form-label" for="kmeansName">Nombre</label><input class="form-control" id="kmeansName" name="name" maxlength="150" value="{{ kmeans_form.name.value|default:'' }}" placeholder="Ej. Segmentación zodiacal"></div>
+                <div class="col-md-6"><label class="form-label" for="kmeansTopic">Tema</label><input class="form-control" id="kmeansTopic" name="topic" maxlength="150" value="{{ kmeans_form.topic.value|default:'' }}" placeholder="Ej. Signos zodiacales"></div>
+                <div class="col-12"><label class="form-label" for="kmeansDescription">Descripción u observaciones</label><textarea class="form-control" id="kmeansDescription" name="description" rows="2">{{ kmeans_form.description.value|default:'' }}</textarea></div>
+            </div>
+        </div>
 
         <div class="row g-4">
             <div class="col-lg-4">

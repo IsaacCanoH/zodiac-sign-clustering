@@ -2,6 +2,9 @@ from django import forms
 
 
 class KMeansTrainingForm(forms.Form):
+    name = forms.CharField(max_length=150, required=False)
+    topic = forms.CharField(max_length=150, required=False)
+    description = forms.CharField(required=False)
     algorithm = forms.ChoiceField(
         choices=(('kmeans', 'K-Means'),),
         initial='kmeans',
@@ -45,3 +48,9 @@ class KMeansTrainingForm(forms.Form):
                 'La columna de comparación no puede utilizarse para entrenar.',
             )
         return cleaned_data
+
+
+class KMeansSaveForm(forms.Form):
+    name = forms.CharField(max_length=150)
+    topic = forms.CharField(max_length=150, required=False)
+    description = forms.CharField(required=False)

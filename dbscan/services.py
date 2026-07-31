@@ -5,14 +5,22 @@ from collections import Counter
 from decimal import Decimal
 
 import numpy as np
+import sklearn
 from django.core.paginator import Paginator
+from django.utils import timezone
 from sklearn.cluster import DBSCAN
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
 from datasets.equivalences import canonical_number
-from datasets.model_validation import dataset_fingerprint
+from datasets.model_validation import (
+    build_change_summary,
+    build_schema_profile,
+    dataset_fingerprint,
+    dataset_schema_fingerprint,
+    training_config_fingerprint,
+)
 from datasets.services import filter_dataset_by_category
 
 from .models import DBSCANRun
@@ -139,8 +147,10 @@ def detect_categorical_columns(dataset, records):
     return columns
 
 
-def _filtered_rows(dataset, requested_category):
-    category_filter = filter_dataset_by_category(dataset, requested_category)
+def _filtered_rows(dataset, requested_category, requested_category_column=None):
+    category_filter = filter_dataset_by_category(
+        dataset, requested_category, requested_category_column
+    )
     selected_category = category_filter['selected_category']
     category_column = category_filter['category_column']
 
@@ -154,7 +164,9 @@ def _filtered_rows(dataset, requested_category):
     return category_filter, rows
 
 
-def build_dbscan_training_setup(dataset, requested_category=None):
+def build_dbscan_training_setup(
+    dataset, requested_category=None, requested_category_column=None
+):
     if not dataset:
         return {
             'dbscan_numeric_columns': [],
@@ -165,7 +177,9 @@ def build_dbscan_training_setup(dataset, requested_category=None):
             'dbscan_default_min_samples': DEFAULT_MIN_SAMPLES,
         }
 
-    category_filter, rows = _filtered_rows(dataset, requested_category)
+    category_filter, rows = _filtered_rows(
+        dataset, requested_category, requested_category_column
+    )
     records = [record for _, record in rows]
     numeric_columns = detect_numeric_columns(dataset, records)
     categorical_columns = detect_categorical_columns(dataset, records)
@@ -176,6 +190,7 @@ def build_dbscan_training_setup(dataset, requested_category=None):
         'dbscan_can_train': bool(numeric_columns) and len(records) >= 2,
         'dbscan_training_category': category_filter['selected_category'],
         'dbscan_training_category_label': category_filter['selected_category_label'],
+        'category_column': category_filter['category_column'],
         'dbscan_default_epsilon': DEFAULT_EPSILON,
         'dbscan_default_min_samples': DEFAULT_MIN_SAMPLES,
     }
@@ -291,8 +306,16 @@ def train_dbscan(
     min_samples,
     requested_category=None,
     comparison_column='',
+    requested_category_column=None,
+    name='',
+    topic='',
+    description='',
+    parent_run=None,
+    save_immediately=True,
 ):
-    category_filter, rows = _filtered_rows(dataset, requested_category)
+    category_filter, rows = _filtered_rows(
+        dataset, requested_category, requested_category_column
+    )
     records = [record for _, record in rows]
     allowed_columns = {
         column['name'] for column in detect_numeric_columns(dataset, records)
@@ -414,6 +437,24 @@ def train_dbscan(
         }
     )
 
+    change_summary = {}
+    if parent_run:
+        change_summary = build_change_summary(
+            parent_run, assignments, len(rows),
+            {
+                'previous': {
+                    'silhouette': parent_run.silhouette,
+                    'noise_count': parent_run.noise_count,
+                    'cluster_count': parent_run.cluster_count,
+                },
+                'current': {
+                    'silhouette': score, 'noise_count': noise_count,
+                    'cluster_count': cluster_count,
+                },
+            },
+        )
+    core_indices = getattr(estimator, 'core_sample_indices_', np.asarray([], dtype=int))
+    dataset.dbscan_runs.filter(is_saved=False).delete()
     return DBSCANRun.objects.create(
         dataset=dataset,
         dataset_fingerprint=dataset_fingerprint(dataset),
@@ -436,13 +477,49 @@ def train_dbscan(
         overall_match_percentage=comparison['overall_match_percentage'],
         category_filter=category_filter['selected_category'],
         category_label=category_filter['selected_category_label'],
+        category_column=category_filter['category_column'] or '',
+        name=(name or (parent_run.name if parent_run else '') or 'Modelo DBSCAN'),
+        topic=topic or (parent_run.topic if parent_run else ''),
+        description=description or (parent_run.description if parent_run else ''),
+        parent_run=parent_run,
+        version=(parent_run.version + 1 if parent_run else 1),
+        source_row_count=len(dataset.records),
+        new_record_count=change_summary.get('new_record_count', 0),
+        dataset_schema_fingerprint=dataset_schema_fingerprint(dataset),
+        training_config_fingerprint=training_config_fingerprint(
+            'dbscan', selected_columns,
+            category_filter=category_filter['selected_category'],
+            comparison_column=comparison_column,
+            epsilon=epsilon, min_samples=min_samples,
+            category_column=category_filter['category_column'] or '',
+        ),
+        schema_profile=build_schema_profile(dataset),
+        preprocessing_state={
+            'mean': scaler.mean_.tolist(),
+            'scale': scaler.scale_.tolist(),
+            'variance': scaler.var_.tolist(),
+            'imputed_values': imputed_values,
+        },
+        estimator_state={
+            'core_sample_indices': core_indices.tolist(),
+            'components': getattr(
+                estimator, 'components_', np.empty((0, len(selected_columns)))
+            ).tolist(),
+            'parameters': {'epsilon': epsilon, 'min_samples': min_samples},
+            'strategy': 'full_refit',
+        },
+        library_versions={'scikit_learn': sklearn.__version__, 'numpy': np.__version__},
+        change_summary=change_summary,
+        is_saved=save_immediately,
+        saved_at=(timezone.now() if save_immediately else None),
     )
 
 
 def clear_dbscan_runs(dataset):
-    """Remove every DBSCAN result associated with the active dataset."""
+    """Discard provisional DBSCAN results while preserving saved models."""
     dataset.dbscan_runs.filter(
-        dataset_fingerprint=dataset_fingerprint(dataset)
+        dataset_fingerprint=dataset_fingerprint(dataset),
+        is_saved=False,
     ).delete()
 
 

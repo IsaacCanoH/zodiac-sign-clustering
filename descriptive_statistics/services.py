@@ -360,7 +360,8 @@ def build_statistics_context(request, dataset):
         }
 
     category_filter = filter_dataset_by_category(
-        dataset, request.GET.get('category')
+        dataset, request.GET.get('category'),
+        request.GET.get('category_column'),
     )
     records = category_filter['filtered_records']
     columns = detect_statistical_columns(dataset, records)

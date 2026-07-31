@@ -2,7 +2,9 @@ from django.test import TestCase
 from django.urls import reverse
 
 from datasets.models import Dataset
+from dbscan.models import DBSCANRun
 from dbscan.services import train_dbscan
+from kmeans.models import KMeansRun
 from kmeans.services import train_kmeans
 
 
@@ -52,3 +54,67 @@ class DashboardViewTests(TestCase):
             {item['algorithm'] for item in response.context['all_saved_models']},
             {'kmeans', 'dbscan'},
         )
+
+    def test_deleting_dataset_preserves_downloadable_model_catalogue(self):
+        dataset = Dataset.objects.create(
+            pk=1,
+            source_name='modelos.csv',
+            columns=['x', 'y'],
+            records=[
+                {'x': '0', 'y': '0'},
+                {'x': '0.1', 'y': '0.1'},
+                {'x': '5', 'y': '5'},
+                {'x': '5.1', 'y': '5.1'},
+            ],
+        )
+        kmeans_run = train_kmeans(dataset, ['x', 'y'], 2)
+        dbscan_run = train_dbscan(
+            dataset, ['x', 'y'], epsilon=0.1, min_samples=2
+        )
+
+        self.client.post(reverse('datasets:delete'))
+
+        self.assertFalse(Dataset.objects.exists())
+        self.assertIsNone(KMeansRun.objects.get(pk=kmeans_run.pk).dataset)
+        self.assertIsNone(DBSCANRun.objects.get(pk=dbscan_run.pk).dataset)
+        response = self.client.get(reverse('dashboard:index'))
+        self.assertEqual(len(response.context['all_saved_models']), 2)
+        self.assertEqual(response.context['saved_model_count'], 2)
+        self.assertContains(
+            self.client.get(reverse('kmeans:export', args=[kmeans_run.pk])),
+            '"type": "kmeans"',
+        )
+        self.assertContains(
+            self.client.get(reverse('dbscan:export', args=[dbscan_run.pk])),
+            '"type": "dbscan"',
+        )
+
+    def test_current_filter_controls_compatibility_and_retraining(self):
+        dataset = Dataset.objects.create(
+            pk=1,
+            source_name='categorias.csv',
+            columns=['categoria', 'x'],
+            records=[
+                {'categoria': 'Agua', 'x': '0'},
+                {'categoria': 'Agua', 'x': '0.1'},
+                {'categoria': 'Agua', 'x': '5'},
+                {'categoria': 'Agua', 'x': '5.1'},
+                {'categoria': 'Tierra', 'x': '10'},
+                {'categoria': 'Tierra', 'x': '10.1'},
+            ],
+        )
+        run = train_kmeans(dataset, ['x'], 2, requested_category='agua')
+
+        response = self.client.get(
+            reverse('dashboard:index'), {'category': 'tierra'}
+        )
+        item = response.context['all_saved_models'][0]
+        self.assertFalse(item['compatible'])
+        self.assertContains(response, 'El filtro actual no coincide')
+
+        self.client.post(
+            reverse('kmeans:retrain', args=[run.pk]),
+            {'category': 'tierra'},
+        )
+        self.assertEqual(KMeansRun.objects.count(), 1)
+        self.assertIn('model_action_error', self.client.session)

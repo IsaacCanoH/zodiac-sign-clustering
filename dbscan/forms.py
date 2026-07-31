@@ -2,6 +2,9 @@ from django import forms
 
 
 class DBSCANTrainingForm(forms.Form):
+    name = forms.CharField(max_length=150, required=False)
+    topic = forms.CharField(max_length=150, required=False)
+    description = forms.CharField(required=False)
     epsilon = forms.FloatField(
         min_value=0.01,
         label='Epsilon (ε)',
@@ -46,3 +49,9 @@ class DBSCANTrainingForm(forms.Form):
                 'La columna de comparación no puede utilizarse para entrenar.',
             )
         return cleaned_data
+
+
+class DBSCANSaveForm(forms.Form):
+    name = forms.CharField(max_length=150)
+    topic = forms.CharField(max_length=150, required=False)
+    description = forms.CharField(required=False)
