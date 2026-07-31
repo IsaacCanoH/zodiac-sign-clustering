@@ -1,0 +1,163 @@
+{% if not dataset %}
+    <div class="border rounded-3 bg-body-tertiary text-center p-5">
+        <h2 class="h6 fw-bold">No hay datos para entrenar</h2>
+        <p class="text-secondary mb-0">Carga un dataset para configurar el algoritmo DBSCAN.</p>
+    </div>
+{% else %}
+    {% if dbscan_training_category %}
+        <div class="alert alert-light border py-2" role="status">
+            El entrenamiento utilizará únicamente los registros de la categoría
+            <strong>{{ dbscan_training_category_label }}</strong>.
+        </div>
+    {% endif %}
+
+    {% if dbscan_training_errors or dbscan_form.errors %}
+        <div class="alert alert-danger" role="alert">
+            <p class="fw-semibold mb-1">No fue posible iniciar el entrenamiento:</p>
+            <ul class="mb-0">
+                {% for error in dbscan_training_errors %}<li>{{ error.message }}</li>{% endfor %}
+                {% for field in dbscan_form %}
+                    {% for error in field.errors %}<li>{{ error }}</li>{% endfor %}
+                {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+
+    <form method="post" action="{% url 'dbscan:train' %}" id="dbscanTrainingForm">
+        {% csrf_token %}
+        <input type="hidden" name="algorithm" value="dbscan">
+        {% if dbscan_training_category %}<input type="hidden" name="category" value="{{ dbscan_training_category }}">{% endif %}
+
+        <div class="row g-4">
+            <div class="col-lg-4">
+                <div class="card h-100">
+                    <div class="card-header bg-white">
+                        <h3 class="h6 fw-bold mb-1">Parámetros de DBSCAN</h3>
+                        <p class="small text-secondary mb-0">Configura el radio de vecindad y el mínimo de puntos para formar un cluster.</p>
+                    </div>
+                    <div class="card-body">
+                        {% if dbscan_can_train %}
+                            <label class="form-label" for="dbscanEpsilon">
+                                Epsilon (ε) — Radio de vecindad
+                            </label>
+                            <input
+                                class="form-control"
+                                type="number"
+                                id="dbscanEpsilon"
+                                name="epsilon"
+                                step="0.01"
+                                min="0.01"
+                                value="{{ dbscan_form.epsilon.value|default:dbscan_default_epsilon }}"
+                            >
+                            <p class="small text-secondary mt-2 mb-3">
+                                Distancia máxima entre dos puntos para considerarlos vecinos.
+                                Un valor mayor agrupa más puntos pero puede unir clusters distintos.
+                            </p>
+
+                            <label class="form-label" for="dbscanMinSamples">
+                                Mínimo de muestras
+                            </label>
+                            <input
+                                class="form-control"
+                                type="number"
+                                id="dbscanMinSamples"
+                                name="min_samples"
+                                step="1"
+                                min="2"
+                                value="{{ dbscan_form.min_samples.value|default:dbscan_default_min_samples }}"
+                            >
+                            <p class="small text-secondary mt-2 mb-0">
+                                Número mínimo de puntos en el vecindario para que un punto sea considerado núcleo.
+                                Un valor mayor genera clusters más densos.
+                            </p>
+                        {% else %}
+                            <div class="text-secondary">
+                                Se requieren al menos 2 registros y una variable numérica con valores diferentes.
+                            </div>
+                        {% endif %}
+
+                        <hr>
+                        <label class="form-label" for="dbscanComparisonColumn">
+                            Columna para comparar resultados
+                            <span class="text-secondary fw-normal">(opcional)</span>
+                        </label>
+                        <select class="form-select" id="dbscanComparisonColumn" name="comparison_column">
+                            <option value="">Sin comparación</option>
+                            {% for column in dbscan_categorical_columns %}
+                                <option value="{{ column.name }}"{% if selected_dbscan_comparison_column == column.name %} selected{% endif %}>
+                                    {{ column.name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                        <p class="small text-secondary mt-2 mb-0">
+                            Se utiliza únicamente para evaluar la composición de los clusters; no participa en el entrenamiento.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-8">
+                <div class="card h-100">
+                    <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        <div>
+                            <h3 class="h6 fw-bold mb-1">Columnas para el entrenamiento</h3>
+                            <p class="small text-secondary mb-0">Solo se muestran variables numéricas con valores diferentes.</p>
+                        </div>
+                        <div class="btn-group btn-group-sm" role="group" aria-label="Selección de columnas">
+                            <button class="btn btn-outline-secondary" id="selectAllDbscanColumns" type="button">Seleccionar todas</button>
+                            <button class="btn btn-outline-secondary" id="clearDbscanColumns" type="button">Deseleccionar todas</button>
+                        </div>
+                    </div>
+                    <div class="card-body overflow-auto" style="max-height: 22rem;">
+                        {% if dbscan_numeric_columns %}
+                            <div class="row g-2">
+                                {% for column in dbscan_numeric_columns %}
+                                    <div class="col-md-6">
+                                        <div class="form-check border rounded-2 p-3 ps-5 h-100">
+                                            <input
+                                                class="form-check-input dbscan-column"
+                                                type="checkbox"
+                                                name="columns"
+                                                value="{{ column.name }}"
+                                                id="dbscanColumn{{ forloop.counter }}"
+                                                {% if column.name in selected_dbscan_columns %}checked{% endif %}
+                                            >
+                                            <label class="form-check-label w-100" for="dbscanColumn{{ forloop.counter }}">
+                                                <span class="d-block">{{ column.name }}</span>
+                                                <span class="small text-secondary">
+                                                    {{ column.unique_count }} valores distintos
+                                                    {% if column.null_count %} · {{ column.null_count }} nulos{% endif %}
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="text-center text-secondary py-4">
+                                No se encontraron columnas numéricas compatibles con DBSCAN.
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="card-footer bg-white d-flex justify-content-between">
+                        <span class="small text-secondary" id="dbscanSelectedCount">0 columnas seleccionadas</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="alert alert-light border mt-4 mb-3">
+            <strong>¿Cómo funciona DBSCAN?</strong>
+            Las variables se estandarizan antes del entrenamiento. DBSCAN descubre los clusters
+            automáticamente según la densidad de los datos. Los puntos que no pertenecen a ningún
+            cluster se marcan como <strong>ruido</strong>.
+            Los valores numéricos faltantes se sustituyen por la mediana de su columna.
+        </div>
+
+        <div class="d-flex justify-content-end">
+            <button class="btn btn-primary px-4" id="trainDbscanButton" type="submit" {% if not dbscan_can_train %}disabled{% endif %}>
+                Entrenar DBSCAN
+            </button>
+        </div>
+    </form>
+{% endif %}

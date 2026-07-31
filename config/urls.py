@@ -22,5 +22,6 @@ urlpatterns = [
     path('datasets/', include('datasets.urls')),
     path('estadistica/', include('descriptive_statistics.urls')),
     path('kmeans/', include('kmeans.urls')),
+    path('dbscan/', include('dbscan.urls')),
     path('admin/', admin.site.urls),
 ]
