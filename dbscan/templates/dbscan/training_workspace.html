@@ -97,16 +97,15 @@
             </div>
 
             <div class="col-lg-8">
-                <div class="card h-100">
+                <div class="card">
                     <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
                         <div>
                             <h3 class="h6 fw-bold mb-1">Columnas para el entrenamiento</h3>
                             <p class="small text-secondary mb-0">Solo se muestran variables numéricas con valores diferentes.</p>
                         </div>
-                        <div class="btn-group btn-group-sm" role="group" aria-label="Selección de columnas">
-                            <button class="btn btn-outline-secondary" id="selectAllDbscanColumns" type="button">Seleccionar todas</button>
-                            <button class="btn btn-outline-secondary" id="clearDbscanColumns" type="button">Deseleccionar todas</button>
-                        </div>
+                        <button class="btn btn-sm btn-outline-secondary" id="toggleDbscanColumns" type="button">
+                            Seleccionar todas
+                        </button>
                     </div>
                     <div class="card-body overflow-auto" style="max-height: 22rem;">
                         {% if dbscan_numeric_columns %}

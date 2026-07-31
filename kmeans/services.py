@@ -12,6 +12,7 @@ from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
 from datasets.equivalences import canonical_number
+from datasets.model_validation import dataset_fingerprint
 from datasets.services import filter_dataset_by_category
 
 from .models import KMeansRun
@@ -397,6 +398,8 @@ def train_kmeans(
 
     return KMeansRun.objects.create(
         dataset=dataset,
+        dataset_fingerprint=dataset_fingerprint(dataset),
+        dataset_source_name=dataset.source_name,
         cluster_count=cluster_count,
         selected_columns=selected_columns,
         assignments=assignments,
@@ -419,7 +422,9 @@ def train_kmeans(
 
 def clear_kmeans_runs(dataset):
     """Remove every K-Means result associated with the active dataset."""
-    dataset.kmeans_runs.all().delete()
+    dataset.kmeans_runs.filter(
+        dataset_fingerprint=dataset_fingerprint(dataset)
+    ).delete()
 
 
 def _silhouette_interpretation(score):
@@ -588,7 +593,13 @@ def _chart_context(run, matrix):
 
 
 def build_results_context(dataset, page_number=None):
-    run = dataset.kmeans_runs.first() if dataset else None
+    run = (
+        dataset.kmeans_runs.filter(
+            dataset_fingerprint=dataset_fingerprint(dataset)
+        ).first()
+        if dataset
+        else None
+    )
     if not run:
         return {
             'kmeans_run': None,

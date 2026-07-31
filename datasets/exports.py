@@ -10,16 +10,22 @@ HEADER_FILL = PatternFill(fill_type='solid', fgColor='1F4E78')
 HEADER_FONT = Font(color='FFFFFF', bold=True)
 
 
-def build_excel_file(columns, records):
-    """Create a formatted Excel workbook without modifying source records."""
+def build_excel_file_from_rows(
+    columns,
+    rows,
+    *,
+    worksheet_title='Datos filtrados',
+    table_name='DatasetFiltrado',
+):
+    """Create a formatted Excel workbook from ordered headers and row values."""
     workbook = Workbook()
     worksheet = workbook.active
-    worksheet.title = 'Datos filtrados'
+    worksheet.title = worksheet_title
     worksheet.freeze_panes = 'A2'
 
     worksheet.append(columns)
-    for record in records:
-        worksheet.append([record.get(column, '') for column in columns])
+    for row in rows:
+        worksheet.append(row)
 
     for cell in worksheet[1]:
         cell.fill = HEADER_FILL
@@ -37,7 +43,7 @@ def build_excel_file(columns, records):
         table_reference = (
             f'A1:{get_column_letter(worksheet.max_column)}{worksheet.max_row}'
         )
-        table = Table(displayName='DatasetFiltrado', ref=table_reference)
+        table = Table(displayName=table_name, ref=table_reference)
         table.tableStyleInfo = TableStyleInfo(
             name='TableStyleMedium2',
             showFirstColumn=False,
@@ -49,7 +55,8 @@ def build_excel_file(columns, records):
 
     for index, column in enumerate(columns, start=1):
         values = [column] + [
-            str(record.get(column, '')) for record in records[:200]
+            str(row[index - 1] if index <= len(row) else '')
+            for row in rows[:200]
         ]
         width = min(max(len(value) for value in values) + 2, 40)
         worksheet.column_dimensions[get_column_letter(index)].width = width
@@ -57,3 +64,12 @@ def build_excel_file(columns, records):
     output = BytesIO()
     workbook.save(output)
     return output.getvalue()
+
+
+def build_excel_file(columns, records):
+    """Create a formatted Excel workbook without modifying source records."""
+    rows = [
+        [record.get(column, '') for column in columns]
+        for record in records
+    ]
+    return build_excel_file_from_rows(columns, rows)

@@ -106,6 +106,9 @@
                         <button class="nav-link py-3" id="results-tab" data-bs-toggle="tab" data-bs-target="#results-pane" type="button" role="tab" aria-controls="results-pane" aria-selected="false">Resultados</button>
                     </li>
                     <li class="nav-item" role="presentation">
+                        <button class="nav-link py-3" id="classified-tab" data-bs-toggle="tab" data-bs-target="#classified-pane" type="button" role="tab" aria-controls="classified-pane" aria-selected="false">Datos clasificados</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
                         <button class="nav-link py-3" id="models-tab" data-bs-toggle="tab" data-bs-target="#models-pane" type="button" role="tab" aria-controls="models-pane" aria-selected="false">Modelos guardados</button>
                     </li>
                 </ul>
@@ -186,14 +189,14 @@
                             <div class="mb-4">
                                 <ul class="nav nav-pills" id="resultsTabs" role="tablist">
                                     <li class="nav-item" role="presentation">
-                                        <button class="nav-link active" id="kmeans-results-tab"
+                                        <button class="nav-link{% if results_view != 'dbscan' %} active{% endif %}" id="kmeans-results-tab"
                                             data-bs-toggle="pill" data-bs-target="#kmeans-results-panel"
                                             type="button" role="tab">
                                             Resultados K-Means
                                         </button>
                                     </li>
                                     <li class="nav-item" role="presentation">
-                                        <button class="nav-link" id="dbscan-results-tab"
+                                        <button class="nav-link{% if results_view == 'dbscan' %} active{% endif %}" id="dbscan-results-tab"
                                             data-bs-toggle="pill" data-bs-target="#dbscan-results-panel"
                                             type="button" role="tab">
                                             Resultados DBSCAN
@@ -202,14 +205,18 @@
                                 </ul>
                             </div>
                             <div class="tab-content">
-                                <div class="tab-pane fade show active" id="kmeans-results-panel" role="tabpanel">
+                                <div class="tab-pane fade{% if results_view != 'dbscan' %} show active{% endif %}" id="kmeans-results-panel" role="tabpanel">
                                     {% include 'kmeans/results_workspace.html' %}
                                 </div>
-                                <div class="tab-pane fade" id="dbscan-results-panel" role="tabpanel">
+                                <div class="tab-pane fade{% if results_view == 'dbscan' %} show active{% endif %}" id="dbscan-results-panel" role="tabpanel">
                                     {% include 'dbscan/results_workspace.html' %}
                                 </div>
                             </div>
                         {% endif %}
+                    </div>
+
+                    <div class="tab-pane fade" id="classified-pane" role="tabpanel" aria-labelledby="classified-tab">
+                        {% include 'classified_data/workspace.html' %}
                     </div>
 
                     <div class="tab-pane fade" id="models-pane" role="tabpanel" aria-labelledby="models-tab" tabindex="0">
@@ -232,7 +239,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="{% static 'datasets/equivalences.js' %}?v=2"></script>
     <script src="{% static 'descriptive_statistics/charts.js' %}"></script>
-    <script src="{% static 'kmeans/workspace.js' %}?v=7"></script>
+    <script src="{% static 'kmeans/workspace.js' %}?v=10"></script>
 
     {# Pass the server-side active algorithm to the JS #}
     <script>

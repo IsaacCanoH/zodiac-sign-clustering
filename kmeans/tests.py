@@ -1,9 +1,12 @@
+from copy import deepcopy
+
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 
 from datasets.models import Dataset
 
+from .exports import export_kmeans_run, import_kmeans_run
 from .models import KMeansRun
 from .services import (
     KMeansTrainingError,
@@ -399,7 +402,7 @@ class KMeansViewTests(TestCase):
 
         self.assertEqual(
             response.url,
-            f"{reverse('dashboard:index')}#results-pane",
+            f"{reverse('dashboard:index')}?results_view=kmeans#results-pane",
         )
         self.assertEqual(KMeansRun.objects.count(), 1)
 
@@ -448,7 +451,7 @@ class KMeansViewTests(TestCase):
         self.assertContains(response, 'Este campo es obligatorio.')
         self.assertFalse(KMeansRun.objects.exists())
 
-    def test_replacing_dataset_removes_previous_training_results(self):
+    def test_replacing_dataset_preserves_previous_training_model(self):
         dataset = self.create_dataset()
         train_kmeans(dataset, ['Edad', 'Puntaje'], 2)
         new_file = SimpleUploadedFile(
@@ -459,7 +462,29 @@ class KMeansViewTests(TestCase):
 
         self.client.post(reverse('datasets:upload'), {'file': new_file})
 
-        self.assertFalse(KMeansRun.objects.exists())
+        self.assertTrue(KMeansRun.objects.exists())
+        dashboard = self.client.get(reverse('dashboard:index'))
+        self.assertIsNone(dashboard.context['kmeans_run'])
+        self.assertContains(dashboard, 'Otro dataset')
+
+    def test_incompatible_saved_model_cannot_be_activated_directly(self):
+        dataset = self.create_dataset()
+        run = train_kmeans(dataset, ['Edad', 'Puntaje'], 2)
+        new_file = SimpleUploadedFile(
+            'nuevo.csv',
+            b'x,y\n1,1\n2,2\n',
+            content_type='text/csv',
+        )
+        self.client.post(reverse('datasets:upload'), {'file': new_file})
+
+        response = self.client.post(
+            reverse('kmeans:activate', args=[run.pk]),
+            follow=True,
+        )
+
+        self.assertContains(response, 'pertenece a otro dataset')
+        self.assertEqual(response.request['PATH_INFO'], reverse('dashboard:index'))
+        self.assertFalse(response.context['all_saved_models'][0]['compatible'])
 
     def test_results_show_reset_training_button(self):
         dataset = self.create_dataset()
@@ -498,3 +523,46 @@ class KMeansViewTests(TestCase):
                 {'Nombre': 'F', 'Edad': '42', 'Puntaje': '8.9', 'Segmento': 'Adulto'},
             ],
         )
+
+
+class KMeansImportValidationTests(TestCase):
+    def setUp(self):
+        self.dataset = Dataset.objects.create(
+            pk=1,
+            source_name='datos.csv',
+            columns=['x', 'y'],
+            records=[
+                {'x': '0', 'y': '0'},
+                {'x': '0.1', 'y': '0.1'},
+                {'x': '5', 'y': '5'},
+                {'x': '5.1', 'y': '5.1'},
+            ],
+        )
+        self.run = train_kmeans(
+            self.dataset,
+            selected_columns=['x', 'y'],
+            cluster_count=2,
+        )
+        self.payload = export_kmeans_run(self.run)
+
+    def test_valid_export_import_round_trip(self):
+        self.run.delete()
+
+        imported = import_kmeans_run(self.dataset, self.payload)
+
+        self.assertEqual(imported.assignments, self.payload['assignments'])
+        self.assertEqual(build_results_context(self.dataset)['kmeans_run'], imported)
+
+    def test_import_rejects_different_dataset(self):
+        self.dataset.records[0]['x'] = '999'
+        self.dataset.save(update_fields=['records'])
+
+        with self.assertRaisesMessage(ValueError, 'conjunto de datos diferente'):
+            import_kmeans_run(self.dataset, self.payload)
+
+    def test_import_rejects_invalid_centroid_dimensions(self):
+        payload = deepcopy(self.payload)
+        payload['centroids'][0]['values'] = [1]
+
+        with self.assertRaisesMessage(ValueError, 'dimensiones'):
+            import_kmeans_run(self.dataset, payload)

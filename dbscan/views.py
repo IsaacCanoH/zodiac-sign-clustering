@@ -1,5 +1,7 @@
 import json
 
+from django.core.exceptions import ValidationError
+from django.db import DatabaseError
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
@@ -7,6 +9,7 @@ from django.utils import timezone
 from django.views import View
 
 from datasets.models import Dataset
+from datasets.model_validation import dataset_fingerprint
 
 from .exports import export_dbscan_run, import_dbscan_run
 from .forms import DBSCANTrainingForm
@@ -19,11 +22,23 @@ from .services import (
 )
 
 
+def _dashboard_redirect(fragment, **query):
+    clean_query = {
+        key: value for key, value in query.items() if value not in (None, '')
+    }
+    return redirect(
+        reverse('dashboard:index', query=clean_query, fragment=fragment)
+    )
+
+
 class DBSCANTrainingView(View):
     def post(self, request):
         dataset = Dataset.objects.filter(pk=1).first()
         if not dataset:
-            return redirect(f"{reverse('dashboard:index')}#training-pane")
+            return _dashboard_redirect(
+                'training-pane',
+                category=request.POST.get('category'),
+            )
 
         setup = build_dbscan_training_setup(
             dataset, request.POST.get('category')
@@ -46,7 +61,10 @@ class DBSCANTrainingView(View):
                 },
                 'errors': form.errors.get_json_data(),
             }
-            return redirect(f"{reverse('dashboard:index')}#training-pane")
+            return _dashboard_redirect(
+                'training-pane',
+                category=request.POST.get('category'),
+            )
 
         try:
             train_dbscan(
@@ -68,9 +86,12 @@ class DBSCANTrainingView(View):
                 },
                 'errors': {'__all__': [{'message': str(error), 'code': ''}]},
             }
-            return redirect(f"{reverse('dashboard:index')}#training-pane")
+            return _dashboard_redirect(
+                'training-pane',
+                category=request.POST.get('category'),
+            )
 
-        return redirect(f"{reverse('dashboard:index')}#results-pane")
+        return _dashboard_redirect('results-pane', results_view='dbscan')
 
 
 class DBSCANResetView(View):
@@ -79,7 +100,7 @@ class DBSCANResetView(View):
         if dataset:
             clear_dbscan_runs(dataset)
         request.session.pop('dbscan_form_state', None)
-        return redirect(f"{reverse('dashboard:index')}#training-pane")
+        return _dashboard_redirect('training-pane')
 
 
 class DBSCANExportView(View):
@@ -108,27 +129,39 @@ class DBSCANImportView(View):
         dataset = Dataset.objects.filter(pk=1).first()
         if not dataset:
             request.session['model_import_error'] = 'No hay un dataset cargado.'
-            return redirect(f"{reverse('dashboard:index')}#models-pane")
+            return _dashboard_redirect('models-pane')
 
         uploaded = request.FILES.get('model_file')
         if not uploaded:
             request.session['model_import_error'] = 'No se seleccionó ningún archivo.'
-            return redirect(f"{reverse('dashboard:index')}#models-pane")
+            return _dashboard_redirect('models-pane')
+        if uploaded.size > 5 * 1024 * 1024:
+            request.session['model_import_error'] = (
+                'El archivo supera el límite permitido de 5 MB.'
+            )
+            return _dashboard_redirect('models-pane')
 
         try:
             raw = uploaded.read().decode('utf-8')
             data = json.loads(raw)
             import_dbscan_run(dataset, data)
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except (
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            KeyError,
+            TypeError,
+            ValidationError,
+            DatabaseError,
+        ):
             request.session['model_import_error'] = (
                 'El archivo no es un modelo DBSCAN válido o está corrupto.'
             )
-            return redirect(f"{reverse('dashboard:index')}#models-pane")
+            return _dashboard_redirect('models-pane')
         except ValueError as error:
             request.session['model_import_error'] = str(error)
-            return redirect(f"{reverse('dashboard:index')}#models-pane")
+            return _dashboard_redirect('models-pane')
 
-        return redirect(f"{reverse('dashboard:index')}#results-pane")
+        return _dashboard_redirect('results-pane', results_view='dbscan')
 
 
 class DBSCANActivateView(View):
@@ -137,10 +170,16 @@ class DBSCANActivateView(View):
     def post(self, request, pk):
         dataset = Dataset.objects.filter(pk=1).first()
         if dataset:
-            DBSCANRun.objects.filter(pk=pk, dataset=dataset).update(
-                created_at=timezone.now()
-            )
-        return redirect(f"{reverse('dashboard:index')}#results-pane")
+            run = get_object_or_404(DBSCANRun, pk=pk, dataset=dataset)
+            if run.dataset_fingerprint != dataset_fingerprint(dataset):
+                request.session['model_action_error'] = (
+                    'Este modelo DBSCAN pertenece a otro dataset. '
+                    'Carga el dataset original para activarlo.'
+                )
+                return _dashboard_redirect('models-pane')
+            run.activated_at = timezone.now()
+            run.save(update_fields=('activated_at',))
+        return _dashboard_redirect('results-pane', results_view='dbscan')
 
 
 class DBSCANDeleteView(View):
@@ -150,5 +189,5 @@ class DBSCANDeleteView(View):
         dataset = Dataset.objects.filter(pk=1).first()
         if dataset:
             DBSCANRun.objects.filter(pk=pk, dataset=dataset).delete()
-        return redirect(f"{reverse('dashboard:index')}#models-pane")
+        return _dashboard_redirect('models-pane')
 
