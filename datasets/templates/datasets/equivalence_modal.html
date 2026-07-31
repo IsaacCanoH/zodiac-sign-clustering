@@ -88,15 +88,16 @@
                             <input class="form-control" id="configurationName" maxlength="150" placeholder="Ej. Escala Likert de acuerdo">
                             <div class="invalid-feedback" id="configurationNameError"></div>
                         </div>
-                        <div class="row g-3 align-items-center mb-3">
+                        <div class="row g-3 align-items-end mb-3">
                             <div class="col-lg-5">
                                 <label for="columnSearch" class="form-label">Buscar columna</label>
                                 <input class="form-control" id="columnSearch" placeholder="Escribe un nombre">
                             </div>
-                            <div class="col-lg-7 d-flex flex-wrap align-items-end gap-2">
-                                <button class="btn btn-outline-secondary btn-sm" id="selectCompatibleButton" type="button">Seleccionar compatibles</button>
-                                <button class="btn btn-outline-secondary btn-sm" id="clearColumnsButton" type="button">Deseleccionar todas</button>
-                                <div class="form-check form-switch ms-lg-auto">
+                            <div class="col-lg-7 d-flex flex-column flex-sm-row justify-content-sm-between align-items-sm-center gap-3">
+                                <button class="btn btn-outline-secondary btn-sm align-self-start align-self-sm-center" id="toggleCompatibleColumnsButton" type="button">
+                                    Seleccionar compatibles
+                                </button>
+                                <div class="form-check form-switch mb-0">
                                     <input class="form-check-input" type="checkbox" role="switch" id="showAllNumericColumns">
                                     <label class="form-check-label" for="showAllNumericColumns">Mostrar todas las numéricas</label>
                                 </div>

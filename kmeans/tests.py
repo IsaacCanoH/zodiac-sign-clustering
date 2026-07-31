@@ -273,6 +273,86 @@ class KMeansServiceTests(TestCase):
             25,
         )
 
+    def test_two_dimension_chart_uses_training_values_and_centroids(self):
+        dataset = self.create_dataset(
+            ['x', 'y'],
+            [
+                {'x': '1', 'y': '2'},
+                {'x': '1.2', 'y': '2.2'},
+                {'x': '8', 'y': '9'},
+                {'x': '8.2', 'y': '9.2'},
+            ],
+        )
+        run = train_kmeans(dataset, ['x', 'y'], 2)
+
+        context = build_results_context(dataset)
+        chart = context['kmeans_chart']
+        plotted_points = [
+            point
+            for cluster in chart['clusters']
+            for point in cluster['points']
+        ]
+
+        self.assertFalse(chart['projected'])
+        self.assertEqual(chart['x_label'], 'x')
+        self.assertEqual(chart['y_label'], 'y')
+        self.assertEqual(
+            {(point['x'], point['y']) for point in plotted_points},
+            {(1.0, 2.0), (1.2, 2.2), (8.0, 9.0), (8.2, 9.2)},
+        )
+        self.assertEqual(
+            [(item['x'], item['y']) for item in chart['centroids']],
+            [
+                (centroid['values'][0], centroid['values'][1])
+                for centroid in run.centroids
+            ],
+        )
+
+    def test_chart_uses_pca_only_for_more_than_two_training_columns(self):
+        dataset = self.create_dataset(
+            ['x', 'y', 'z'],
+            [
+                {'x': str(value), 'y': str(value * 2), 'z': str(value % 3)}
+                for value in range(1, 9)
+            ],
+        )
+        train_kmeans(dataset, ['x', 'y', 'z'], 2)
+
+        chart = build_results_context(dataset)['kmeans_chart']
+
+        self.assertTrue(chart['projected'])
+        self.assertIn('Proyección PCA', chart['method'])
+        self.assertIn('Componente principal 1', chart['x_label'])
+        self.assertEqual(
+            sum(len(cluster['points']) for cluster in chart['clusters']),
+            8,
+        )
+
+    def test_cluster_profiles_match_persisted_assignments(self):
+        dataset = self.create_dataset(
+            ['x'],
+            [{'x': value} for value in ['1', '1.1', '1.2', '9', '9.1']],
+        )
+        run = train_kmeans(dataset, ['x'], 2)
+
+        profiles = build_results_context(dataset)['kmeans_cluster_profiles']
+
+        self.assertEqual(
+            [profile['size'] for profile in profiles],
+            [
+                run.cluster_sizes[str(cluster)]
+                for cluster in range(1, run.cluster_count + 1)
+            ],
+        )
+        self.assertAlmostEqual(
+            sum(profile['percentage'] for profile in profiles),
+            100.0,
+            places=1,
+        )
+        self.assertTrue(
+            all('promedio' in profile['characteristic'] for profile in profiles)
+        )
+
     @staticmethod
     def create_dataset(columns, records):
         return Dataset.objects.create(
@@ -297,6 +377,7 @@ class KMeansViewTests(TestCase):
 
         self.assertContains(response, 'Cantidad de grupos')
         self.assertContains(response, 'Seleccionar todas')
+        self.assertNotContains(response, 'id="clearKMeansColumns"')
         self.assertContains(response, 'Edad')
         self.assertContains(response, 'Puntaje')
         self.assertContains(response, 'Columna para comparar resultados')
@@ -326,6 +407,10 @@ class KMeansViewTests(TestCase):
         self.assertContains(results, 'Resultados de K-Means')
         self.assertContains(results, 'Coeficiente de silueta')
         self.assertContains(results, 'Inercia')
+        self.assertContains(results, 'Calidad del agrupamiento')
+        self.assertContains(results, 'Separación visual de los clusters')
+        self.assertContains(results, 'Qué encontró el algoritmo')
+        self.assertContains(results, 'kmeansClusterChart')
         self.assertNotContains(results, 'Composición de los clusters')
         self.assertNotContains(results, 'Asignación de registros')
 
