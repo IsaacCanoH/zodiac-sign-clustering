@@ -6,18 +6,16 @@ from decimal import Decimal
 
 import numpy as np
 from django.core.paginator import Paginator
-from sklearn.cluster import KMeans
+from sklearn.cluster import DBSCAN
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
 from datasets.equivalences import canonical_number
 from datasets.services import filter_dataset_by_category
 
-from .models import KMeansRun
+from .models import DBSCANRun
 
 
-MIN_CLUSTERS = 2
-MAX_CLUSTERS = 10
 RESULT_PAGE_SIZE = 50
 RANDOM_STATE = 42
 MAX_SILHOUETTE_SAMPLES = 2000
@@ -33,10 +31,19 @@ IDENTIFIER_NAMES = {
 }
 NULL_VALUES = {'', 'nan', 'null', 'none'}
 
+# Default hyperparameter suggestions shown in the UI
+DEFAULT_EPSILON = 0.5
+DEFAULT_MIN_SAMPLES = 5
 
-class KMeansTrainingError(Exception):
+
+class DBSCANTrainingError(Exception):
     """A user-correctable error detected before or during training."""
 
+
+# ---------------------------------------------------------------------------
+# Shared helpers (mirror of kmeans/services.py utilities to keep modules
+# independent; they operate on the same concepts so the logic is identical)
+# ---------------------------------------------------------------------------
 
 def _normalize_name(value):
     decomposed = unicodedata.normalize('NFKD', str(value))
@@ -71,7 +78,7 @@ def _as_number(value):
 
 
 def detect_numeric_columns(dataset, records):
-    """Return numeric, non-constant features suitable for K-Means."""
+    """Return numeric, non-constant features suitable for DBSCAN."""
     columns = []
     for column in dataset.columns:
         if _is_identifier(column):
@@ -144,30 +151,30 @@ def _filtered_rows(dataset, requested_category):
     return category_filter, rows
 
 
-def build_training_setup(dataset, requested_category=None):
+def build_dbscan_training_setup(dataset, requested_category=None):
     if not dataset:
         return {
-            'numeric_columns': [],
-            'categorical_columns': [],
-            'sample_count': 0,
-            'max_clusters': 0,
-            'can_train': False,
+            'dbscan_numeric_columns': [],
+            'dbscan_categorical_columns': [],
+            'dbscan_sample_count': 0,
+            'dbscan_can_train': False,
+            'dbscan_default_epsilon': DEFAULT_EPSILON,
+            'dbscan_default_min_samples': DEFAULT_MIN_SAMPLES,
         }
 
     category_filter, rows = _filtered_rows(dataset, requested_category)
     records = [record for _, record in rows]
     numeric_columns = detect_numeric_columns(dataset, records)
     categorical_columns = detect_categorical_columns(dataset, records)
-    max_clusters = min(MAX_CLUSTERS, max(len(records) - 1, 0))
     return {
-        'numeric_columns': numeric_columns,
-        'categorical_columns': categorical_columns,
-        'sample_count': len(records),
-        'max_clusters': max_clusters,
-        'cluster_options': range(MIN_CLUSTERS, max_clusters + 1),
-        'can_train': bool(numeric_columns) and max_clusters >= MIN_CLUSTERS,
-        'training_category': category_filter['selected_category'],
-        'training_category_label': category_filter['selected_category_label'],
+        'dbscan_numeric_columns': numeric_columns,
+        'dbscan_categorical_columns': categorical_columns,
+        'dbscan_sample_count': len(records),
+        'dbscan_can_train': bool(numeric_columns) and len(records) >= 2,
+        'dbscan_training_category': category_filter['selected_category'],
+        'dbscan_training_category_label': category_filter['selected_category_label'],
+        'dbscan_default_epsilon': DEFAULT_EPSILON,
+        'dbscan_default_min_samples': DEFAULT_MIN_SAMPLES,
     }
 
 
@@ -186,8 +193,8 @@ def _build_matrix(rows, selected_columns):
             if row[column_index] is not None
         ]
         if not available:
-            raise KMeansTrainingError(
-                f'La columna “{column}” no contiene valores numéricos válidos.'
+            raise DBSCANTrainingError(
+                f'La columna "{column}" no contiene valores numéricos válidos.'
             )
         median = float(statistics.median(available))
         missing_count = 0
@@ -203,29 +210,16 @@ def _build_matrix(rows, selected_columns):
     return np.asarray(matrix, dtype=float), imputed_values
 
 
-def _stable_cluster_labels(labels, centers):
-    ordered_clusters = sorted(
-        range(len(centers)),
-        key=lambda cluster: tuple(float(value) for value in centers[cluster]),
-    )
-    label_mapping = {
-        original_label: stable_label
-        for stable_label, original_label in enumerate(ordered_clusters, start=1)
-    }
-    stable_labels = [label_mapping[int(label)] for label in labels]
-    stable_centers = [
-        centers[original_label] for original_label in ordered_clusters
-    ]
-    return stable_labels, stable_centers
-
-
-def _comparison_summary(rows, labels, comparison_column, cluster_count):
+def _comparison_summary(rows, labels, comparison_column, cluster_labels):
+    """Build a per-cluster comparison summary (noise cluster excluded)."""
     category_labels = {}
-    cluster_counters = {
-        cluster: Counter() for cluster in range(1, cluster_count + 1)
-    }
+    # Only include valid clusters (not noise = -1)
+    valid_clusters = sorted(c for c in cluster_labels if c != -1)
+    cluster_counters = {cluster: Counter() for cluster in valid_clusters}
     valid_count = 0
     for (_, record), cluster in zip(rows, labels, strict=True):
+        if cluster == -1:
+            continue
         raw_value = record.get(comparison_column, '')
         if _is_null(raw_value):
             continue
@@ -237,7 +231,7 @@ def _comparison_summary(rows, labels, comparison_column, cluster_count):
 
     summaries = []
     total_matches = 0
-    for cluster in range(1, cluster_count + 1):
+    for cluster in valid_clusters:
         counter = cluster_counters[cluster]
         compared_count = sum(counter.values())
         if not counter:
@@ -262,10 +256,11 @@ def _comparison_summary(rows, labels, comparison_column, cluster_count):
                 2,
             )
             total_matches += predominant_count
+        cluster_size = list(labels).count(cluster)
         summaries.append(
             {
                 'cluster': cluster,
-                'record_count': labels.count(cluster),
+                'record_count': cluster_size,
                 'compared_count': compared_count,
                 'predominant_category': predominant_category,
                 'predominant_count': predominant_count,
@@ -286,10 +281,11 @@ def _comparison_summary(rows, labels, comparison_column, cluster_count):
     }
 
 
-def train_kmeans(
+def train_dbscan(
     dataset,
     selected_columns,
-    cluster_count,
+    epsilon,
+    min_samples,
     requested_category=None,
     comparison_column='',
 ):
@@ -305,49 +301,60 @@ def train_kmeans(
     selected_columns = list(dict.fromkeys(selected_columns))
 
     if not selected_columns:
-        raise KMeansTrainingError('Selecciona al menos una columna.')
+        raise DBSCANTrainingError('Selecciona al menos una columna.')
     if any(column not in allowed_columns for column in selected_columns):
-        raise KMeansTrainingError(
-            'Una o más columnas no son compatibles con K-Means.'
+        raise DBSCANTrainingError(
+            'Una o más columnas no son compatibles con DBSCAN.'
         )
     if comparison_column and comparison_column not in allowed_comparisons:
-        raise KMeansTrainingError(
+        raise DBSCANTrainingError(
             'La columna de comparación no es categórica o no está disponible.'
         )
     if comparison_column and comparison_column in selected_columns:
-        raise KMeansTrainingError(
+        raise DBSCANTrainingError(
             'La columna de comparación no puede utilizarse para entrenar.'
         )
-    if cluster_count < MIN_CLUSTERS:
-        raise KMeansTrainingError('Selecciona al menos 2 grupos.')
-    if cluster_count >= len(rows):
-        raise KMeansTrainingError(
-            'La cantidad de grupos debe ser menor que la cantidad de registros.'
+    if epsilon <= 0:
+        raise DBSCANTrainingError('El valor de ε (epsilon) debe ser mayor a 0.')
+    if min_samples < 2:
+        raise DBSCANTrainingError(
+            'El mínimo de muestras debe ser al menos 2.'
+        )
+    if len(rows) < 2:
+        raise DBSCANTrainingError(
+            'Se requieren al menos 2 registros para ejecutar DBSCAN.'
         )
 
     matrix, imputed_values = _build_matrix(rows, selected_columns)
-    if len(np.unique(matrix, axis=0)) < cluster_count:
-        raise KMeansTrainingError(
-            'No existen suficientes combinaciones diferentes para formar '
-            f'{cluster_count} grupos.'
-        )
 
     scaler = StandardScaler()
     scaled_matrix = scaler.fit_transform(matrix)
-    estimator = KMeans(
-        n_clusters=cluster_count,
-        init='k-means++',
-        n_init=10,
-        max_iter=300,
-        random_state=RANDOM_STATE,
-        algorithm='lloyd',
-    )
-    labels = estimator.fit_predict(scaled_matrix)
-    original_centers = scaler.inverse_transform(estimator.cluster_centers_)
-    labels, original_centers = _stable_cluster_labels(labels, original_centers)
+
+    estimator = DBSCAN(eps=epsilon, min_samples=min_samples, metric='euclidean')
+    raw_labels = estimator.fit_predict(scaled_matrix)
+
+    labels = raw_labels.tolist()
+    unique_labels = set(labels)
+    valid_clusters = sorted(c for c in unique_labels if c != -1)
+    cluster_count = len(valid_clusters)
+    noise_count = labels.count(-1)
+
+    if cluster_count == 0:
+        raise DBSCANTrainingError(
+            'DBSCAN no encontró ningún cluster con los parámetros actuales. '
+            'Intenta aumentar ε o reducir el mínimo de muestras.'
+        )
+
+    # Re-label clusters as 1-based for display (noise stays as -1)
+    label_mapping = {original: idx + 1 for idx, original in enumerate(valid_clusters)}
+    display_labels = [
+        label_mapping[label] if label != -1 else -1
+        for label in labels
+    ]
+    display_valid_clusters = list(range(1, cluster_count + 1))
 
     assignments = []
-    for (row_number, _), cluster in zip(rows, labels, strict=True):
+    for (row_number, _), cluster in zip(rows, display_labels, strict=True):
         assignments.append(
             {
                 'row_number': row_number,
@@ -356,26 +363,26 @@ def train_kmeans(
         )
 
     cluster_sizes = {
-        str(cluster): labels.count(cluster)
-        for cluster in range(1, cluster_count + 1)
+        str(cluster): display_labels.count(cluster)
+        for cluster in display_valid_clusters
     }
-    centroids = [
-        {
-            'cluster': cluster,
-            'values': [round(float(value), 6) for value in center],
-        }
-        for cluster, center in enumerate(original_centers, start=1)
-    ]
-    silhouette_sample_count = min(len(rows), MAX_SILHOUETTE_SAMPLES)
+    if noise_count > 0:
+        cluster_sizes['-1'] = noise_count
+
+    # Silhouette score requires at least 2 distinct non-noise labels
+    non_noise_mask = [label != -1 for label in display_labels]
+    non_noise_labels = [label for label, keep in zip(display_labels, non_noise_mask) if keep]
+    non_noise_matrix = scaled_matrix[non_noise_mask]
+    silhouette_sample_count = min(len(non_noise_labels), MAX_SILHOUETTE_SAMPLES)
     score = None
-    if len(set(labels)) > 1:
+    if len(set(non_noise_labels)) > 1 and len(non_noise_labels) > 1:
         score = float(
             silhouette_score(
-                scaled_matrix,
-                labels,
+                non_noise_matrix,
+                non_noise_labels,
                 sample_size=(
                     silhouette_sample_count
-                    if silhouette_sample_count < len(rows)
+                    if silhouette_sample_count < len(non_noise_labels)
                     else None
                 ),
                 random_state=RANDOM_STATE,
@@ -383,7 +390,9 @@ def train_kmeans(
         )
 
     comparison = (
-        _comparison_summary(rows, labels, comparison_column, cluster_count)
+        _comparison_summary(
+            rows, display_labels, comparison_column, display_valid_clusters
+        )
         if comparison_column
         else {
             'values': [],
@@ -393,16 +402,17 @@ def train_kmeans(
         }
     )
 
-    return KMeansRun.objects.create(
+    return DBSCANRun.objects.create(
         dataset=dataset,
-        cluster_count=cluster_count,
         selected_columns=selected_columns,
         assignments=assignments,
-        centroids=centroids,
         cluster_sizes=cluster_sizes,
         imputed_values=imputed_values,
         sample_count=len(rows),
-        inertia=float(estimator.inertia_),
+        cluster_count=cluster_count,
+        noise_count=noise_count,
+        epsilon=epsilon,
+        min_samples=min_samples,
         silhouette=score,
         silhouette_sample_count=silhouette_sample_count,
         comparison_column=comparison_column,
@@ -415,18 +425,19 @@ def train_kmeans(
     )
 
 
-def clear_kmeans_runs(dataset):
-    """Remove every K-Means result associated with the active dataset."""
-    dataset.kmeans_runs.all().delete()
+def clear_dbscan_runs(dataset):
+    """Remove every DBSCAN result associated with the active dataset."""
+    dataset.dbscan_runs.all().delete()
 
 
-def build_results_context(dataset, page_number=None):
-    run = dataset.kmeans_runs.first() if dataset else None
+def build_dbscan_results_context(dataset, page_number=None):
+    run = dataset.dbscan_runs.first() if dataset else None
     if not run:
         return {
-            'kmeans_run': None,
-            'kmeans_result_page': None,
-            'kmeans_cluster_summaries': [],
+            'dbscan_run': None,
+            'dbscan_result_page': None,
+            'dbscan_result_rows': [],
+            'dbscan_cluster_summaries': [],
         }
 
     paginator = Paginator(run.assignments, RESULT_PAGE_SIZE)
@@ -447,8 +458,11 @@ def build_results_context(dataset, page_number=None):
                 ),
             }
         )
+
+    # Summaries for valid clusters only (noise shown separately)
+    valid_clusters = range(1, run.cluster_count + 1)
     cluster_summaries = []
-    for cluster in range(1, run.cluster_count + 1):
+    for cluster in valid_clusters:
         row_numbers = [
             assignment['row_number']
             for assignment in run.assignments
@@ -464,11 +478,11 @@ def build_results_context(dataset, page_number=None):
         )
 
     return {
-        'kmeans_run': run,
-        'kmeans_result_page': page,
-        'kmeans_result_rows': result_rows,
-        'kmeans_result_page_range': paginator.get_elided_page_range(
+        'dbscan_run': run,
+        'dbscan_result_page': page,
+        'dbscan_result_rows': result_rows,
+        'dbscan_result_page_range': paginator.get_elided_page_range(
             page.number, on_each_side=2, on_ends=1
         ),
-        'kmeans_cluster_summaries': cluster_summaries,
+        'dbscan_cluster_summaries': cluster_summaries,
     }

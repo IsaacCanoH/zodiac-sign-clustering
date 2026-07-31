@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     'datasets',
     'descriptive_statistics',
     'kmeans',
+    'dbscan',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',

@@ -64,7 +64,11 @@
                 </div>
                 <div class="text-lg-end">
                     <span class="small text-secondary d-block">Coincidencia general</span>
-                    <span class="h4 fw-bold">{{ kmeans_run.overall_match_percentage|floatformat:2 }}%</span>
+                    {% if kmeans_run.overall_match_percentage is not None %}
+                        <span class="h4 fw-bold">{{ kmeans_run.overall_match_percentage|floatformat:2 }}%</span>
+                    {% else %}
+                        <span class="h4 fw-bold text-secondary">No disponible</span>
+                    {% endif %}
                     <span class="small text-secondary d-block">
                         {{ kmeans_run.comparison_valid_count }} registros comparables
                     </span>
