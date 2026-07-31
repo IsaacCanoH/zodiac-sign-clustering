@@ -4,18 +4,21 @@
         <p class="text-secondary mb-0">Carga un dataset para configurar el algoritmo de Clustering Jerárquico.</p>
     </div>
 {% else %}
-    {% if training_category %}
+    {% if hierarchical_training_category %}
         <div class="alert alert-light border py-2" role="status">
             El entrenamiento utilizará únicamente los registros de la categoría
-            <strong>{{ training_category_label }}</strong>.
+            <strong>{{ hierarchical_training_category_label }}</strong>.
         </div>
     {% endif %}
 
-    {% if hierarchical_training_errors %}
+    {% if hierarchical_training_errors or hierarchical_form.errors %}
         <div class="alert alert-danger" role="alert">
             <p class="fw-semibold mb-1">No fue posible iniciar el entrenamiento:</p>
             <ul class="mb-0">
                 {% for error in hierarchical_training_errors %}<li>{{ error.message }}</li>{% endfor %}
+                {% for field in hierarchical_form %}
+                    {% for error in field.errors %}<li>{{ error }}</li>{% endfor %}
+                {% endfor %}
             </ul>
         </div>
     {% endif %}
@@ -23,7 +26,17 @@
     <form method="post" action="{% url 'hierarchical:train' %}" id="hierarchicalTrainingForm">
         {% csrf_token %}
         <input type="hidden" name="algorithm" value="hierarchical">
-        {% if training_category %}<input type="hidden" name="category" value="{{ training_category }}">{% endif %}
+        {% if hierarchical_training_category %}<input type="hidden" name="category" value="{{ hierarchical_training_category }}">{% endif %}
+        {% if category_column %}<input type="hidden" name="category_column" value="{{ category_column }}">{% endif %}
+
+        <div class="card mb-4">
+            <div class="card-header bg-white"><h3 class="h6 fw-bold mb-0">Metadatos del modelo</h3></div>
+            <div class="card-body row g-3">
+                <div class="col-md-6"><label class="form-label" for="hierarchicalName">Nombre</label><input class="form-control" id="hierarchicalName" name="name" maxlength="150" value="{{ hierarchical_form.name.value|default:'' }}" placeholder="Ej. Segmentación jerárquica"></div>
+                <div class="col-md-6"><label class="form-label" for="hierarchicalTopic">Tema</label><input class="form-control" id="hierarchicalTopic" name="topic" maxlength="150" value="{{ hierarchical_form.topic.value|default:'' }}" placeholder="Ej. Signos zodiacales"></div>
+                <div class="col-12"><label class="form-label" for="hierarchicalDescription">Descripción u observaciones</label><textarea class="form-control" id="hierarchicalDescription" name="description" rows="2">{{ hierarchical_form.description.value|default:'' }}</textarea></div>
+            </div>
+        </div>
 
         <div class="row g-4">
             <!-- PANEL IZQUIERDO: PARÁMETROS -->
@@ -37,18 +50,28 @@
                         
                         <!-- Cantidad de clusters -->
                         <label class="form-label fw-semibold" for="hierarchicalClusterCount">Número de clusters (k)</label>
-                        <input type="number" class="form-control" id="hierarchicalClusterCount" name="n_clusters" value="3" min="2" max="15" required>
-                        <p class="small text-secondary mt-1 mb-3">
-                            Define en cuántos grupos fijos se cortará el árbol jerárquico final.
-                        </p>
+                        {% if hierarchical_can_train %}
+                            <select class="form-select" id="hierarchicalClusterCount" name="n_clusters">
+                                {% for option in hierarchical_cluster_options %}
+                                    <option value="{{ option }}"{% if hierarchical_form.n_clusters.value|stringformat:"s" == option|stringformat:"s" %} selected{% endif %}>{{ option }} clusters</option>
+                                {% endfor %}
+                            </select>
+                            <p class="small text-secondary mt-1 mb-3">
+                                Disponible: de 2 a {{ hierarchical_max_clusters }} clusters para {{ hierarchical_sample_count }} registros.
+                            </p>
+                        {% else %}
+                            <div class="text-secondary">
+                                Se requieren al menos 3 registros y una variable numérica con valores diferentes.
+                            </div>
+                        {% endif %}
 
                         <!-- Método de enlace -->
                         <label class="form-label fw-semibold" for="hierarchicalLinkage">Método de enlace (Linkage)</label>
                         <select class="form-select" id="hierarchicalLinkage" name="linkage">
-                            <option value="ward" selected>Ward (Minimiza la varianza)</option>
-                            <option value="complete">Complete (Máxima distancia)</option>
-                            <option value="average">Average (Distancia promedio)</option>
-                            <option value="single">Single (Mínima distancia)</option>
+                            <option value="ward"{% if hierarchical_form.linkage.value == "ward" %} selected{% endif %}>Ward (Minimiza la varianza)</option>
+                            <option value="complete"{% if hierarchical_form.linkage.value == "complete" %} selected{% endif %}>Complete (Máxima distancia)</option>
+                            <option value="average"{% if hierarchical_form.linkage.value == "average" %} selected{% endif %}>Average (Distancia promedio)</option>
+                            <option value="single"{% if hierarchical_form.linkage.value == "single" %} selected{% endif %}>Single (Mínima distancia)</option>
                         </select>
                         <p class="small text-secondary mt-1 mb-3">
                             Criterio matemático para decidir cómo se unen los grupos entre sí.
@@ -57,25 +80,36 @@
                         <!-- Afinidad / Distancia -->
                         <label class="form-label fw-semibold" for="hierarchicalAffinity">Métrica de distancia</label>
                         <select class="form-select" id="hierarchicalAffinity" name="affinity">
-                            <option value="euclidean" selected>Euclidiana</option>
-                            <option value="manhattan">Manhattan</option>
-                            <option value="cosine">Coseno</option>
+                            <option value="euclidean"{% if hierarchical_form.affinity.value == "euclidean" %} selected{% endif %}>Euclidiana</option>
+                            <option value="manhattan"{% if hierarchical_form.affinity.value == "manhattan" %} selected{% endif %}>Manhattan</option>
+                            <option value="cosine"{% if hierarchical_form.affinity.value == "cosine" %} selected{% endif %}>Coseno</option>
+                        </select>
+                        <p class="small text-secondary mt-1 mb-3">
+                            Forma de medir la cercanía. <strong>Nota:</strong> Ward solo es compatible con Euclidiana.
+                        </p>
+
+                        <!-- Método de escalado -->
+                        <label class="form-label fw-semibold" for="hierarchicalScaling">Método de escalado</label>
+                        <select class="form-select" id="hierarchicalScaling" name="scaling_method">
+                            <option value="standard"{% if hierarchical_form.scaling_method.value == "standard" %} selected{% endif %}>Estandarización (Z-score)</option>
+                            <option value="minmax"{% if hierarchical_form.scaling_method.value == "minmax" %} selected{% endif %}>Min-Max (0 a 1)</option>
+                            <option value="none"{% if hierarchical_form.scaling_method.value == "none" %} selected{% endif %}>Sin escalar</option>
                         </select>
                         <p class="small text-secondary mt-1 mb-4">
-                            Forma de medir la cercanía. <strong>Nota:</strong> Ward solo es compatible con Euclidiana.
+                            Normalización aplicada antes del entrenamiento.
                         </p>
 
                         <hr>
 
-                        <!-- Columna de comparación (Copia exacta de K-Means) -->
+                        <!-- Columna de comparación -->
                         <label class="form-label" for="hierarchicalComparisonColumn">
                             Columna para comparar resultados
                             <span class="text-secondary fw-normal">(opcional)</span>
                         </label>
                         <select class="form-select" id="hierarchicalComparisonColumn" name="comparison_column">
                             <option value="">Sin comparación</option>
-                            {% for column in categorical_columns %}
-                                <option value="{{ column.name }}">
+                            {% for column in hierarchical_categorical_columns %}
+                                <option value="{{ column.name }}"{% if selected_hierarchical_comparison_column == column.name %} selected{% endif %}>
                                     {{ column.name }}
                                 </option>
                             {% endfor %}
@@ -95,23 +129,23 @@
                             <h3 class="h6 fw-bold mb-1">Columnas para el entrenamiento</h3>
                             <p class="small text-secondary mb-0">Solo se muestran variables numéricas con valores diferentes.</p>
                         </div>
-                        <div class="btn-group btn-group-sm" role="group" aria-label="Selección de columnas">
-                            <button class="btn btn-outline-secondary" type="button" onclick="document.querySelectorAll('.hierarchical-column').forEach(cb => cb.checked = true)">Seleccionar todas</button>
-                            <button class="btn btn-outline-secondary" type="button" onclick="document.querySelectorAll('.hierarchical-column').forEach(cb => cb.checked = false)">Deseleccionar todas</button>
-                        </div>
+                        <button class="btn btn-sm btn-outline-secondary" id="toggleHierarchicalColumns" type="button">
+                            Seleccionar todas
+                        </button>
                     </div>
                     <div class="card-body overflow-auto" style="max-height: 22rem;">
-                        {% if numeric_columns %}
+                        {% if hierarchical_numeric_columns %}
                             <div class="row g-2">
-                                {% for column in numeric_columns %}
+                                {% for column in hierarchical_numeric_columns %}
                                     <div class="col-md-6">
                                         <div class="form-check border rounded-2 p-3 ps-5 h-100">
                                             <input
                                                 class="form-check-input hierarchical-column"
                                                 type="checkbox"
-                                                name="selected_columns"
+                                                name="columns"
                                                 value="{{ column.name }}"
                                                 id="hierarchicalColumn{{ forloop.counter }}"
+                                                {% if column.name in selected_hierarchical_columns %}checked{% endif %}
                                             >
                                             <label class="form-check-label w-100" for="hierarchicalColumn{{ forloop.counter }}">
                                                 <span class="d-block">{{ column.name }}</span>
@@ -131,20 +165,19 @@
                         {% endif %}
                     </div>
                     <div class="card-footer bg-white d-flex justify-content-between">
-                        <span class="small text-secondary">Selecciona las variables que definirán el agrupamiento</span>
+                        <span class="small text-secondary" id="hierarchicalSelectedCount">0 columnas seleccionadas</span>
                     </div>
                 </div>
             </div>
         </div>
 
         <div class="alert alert-light border mt-4 mb-3">
-            Las variables se estandarizan antes del entrenamiento para evitar que una escala domine a las demás.
+            Las variables se escalan antes del entrenamiento para evitar que una escala domine a las demás.
             Los valores numéricos faltantes se sustituyen por la mediana de su columna.
         </div>
 
         <div class="d-flex justify-content-end">
-            <!-- El botón apuntará al backend y procesará los checkboxes "selected_columns" -->
-            <button class="btn btn-primary px-4" type="submit">
+            <button class="btn btn-primary px-4" id="trainHierarchicalButton" type="submit" {% if not hierarchical_can_train %}disabled{% endif %}>
                 Entrenar Clustering Jerárquico
             </button>
         </div>

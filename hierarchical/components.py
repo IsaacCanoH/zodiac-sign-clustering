@@ -1,51 +1,47 @@
-from django.core.paginator import Paginator
+from .forms import HierarchicalTrainingForm
+from .services import build_hierarchical_results_context, build_hierarchical_training_setup
 
-RESULT_PAGE_SIZE = 50
-
-def build_hierarchical_results_context(dataset, page_number=None):
-    run = dataset.hierarchical_runs.first() if dataset else None
-    if not run:
-        return {
-            'hierarchical_run': None,
-            'hierarchical_result_page': None,
-            'hierarchical_result_rows': [],
-            'hierarchical_cluster_summaries': [],
-        }
-
-    paginator = Paginator(run.assignments, RESULT_PAGE_SIZE)
-    page = paginator.get_page(page_number)
-    
-    result_rows = []
-    for assignment in page.object_list:
-        record = dataset.records[assignment['row_number'] - 1]
-        result_rows.append({
-            **assignment,
-            'values': [record.get(column, '') for column in run.selected_columns],
-            'comparison_value': record.get(run.comparison_column, '') if run.comparison_column else '',
-        })
-
-    cluster_summaries = []
-    for cluster in range(1, run.cluster_count + 1):
-        row_numbers = [a['row_number'] for a in run.assignments if a['cluster'] == cluster]
-        cluster_summaries.append({
-            'cluster': cluster,
-            'size': len(row_numbers),
-        })
-
-    return {
-        'hierarchical_run': run,
-        'hierarchical_result_page': page,
-        'hierarchical_result_rows': result_rows,
-        'hierarchical_cluster_summaries': cluster_summaries,
-    }
 
 def build_hierarchical_workspace_context(request, dataset):
-    active_run_id = request.session.get('active_hierarchical_run')
-    run = dataset.hierarchical_runs.filter(id=active_run_id).first() if (dataset and active_run_id) else None
-    if not run and dataset:
-        run = dataset.hierarchical_runs.first()
-
-    context = {'hierarchical_run': run}
-    page_number = request.GET.get('hierarchical_result_page')
-    context.update(build_hierarchical_results_context(dataset, page_number))
-    return context
+    setup = build_hierarchical_training_setup(
+        dataset, request.GET.get('category'),
+        request.GET.get('category_column'),
+    )
+    form_state = request.session.pop('hierarchical_form_state', None)
+    form = HierarchicalTrainingForm(
+        data=form_state['data'] if form_state else None,
+        numeric_columns=setup['hierarchical_numeric_columns'],
+        categorical_columns=setup['hierarchical_categorical_columns'],
+        max_clusters=max(setup['hierarchical_max_clusters'], 2),
+        initial={
+            'algorithm': 'hierarchical',
+            'n_clusters': min(3, setup['hierarchical_max_clusters'])
+            if setup['hierarchical_max_clusters'] >= 2
+            else 2,
+            'linkage': 'ward',
+            'affinity': 'euclidean',
+            'scaling_method': 'standard',
+        },
+    )
+    return {
+        **setup,
+        **build_hierarchical_results_context(
+            dataset, request.GET.get('hierarchical_result_page')
+        ),
+        'hierarchical_form': form,
+        'selected_hierarchical_columns': form['columns'].value() or [],
+        'selected_hierarchical_comparison_column': (
+            form['comparison_column'].value() or ''
+        ),
+        'hierarchical_training_errors': (
+            form_state.get('errors', {}).get('__all__', [])
+            if form_state
+            else []
+        ),
+        # Persist which algorithm was last used so the UI can pre-select it
+        'active_algorithm': (
+            form_state['data'].get('algorithm', 'kmeans')
+            if form_state
+            else 'kmeans'
+        ),
+    }

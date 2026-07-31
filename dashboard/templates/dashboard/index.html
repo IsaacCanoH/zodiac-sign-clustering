@@ -253,7 +253,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="{% static 'datasets/equivalences.js' %}?v=2"></script>
     <script src="{% static 'descriptive_statistics/charts.js' %}"></script>
-    <script src="{% static 'kmeans/workspace.js' %}?v=10"></script>
+    <script src="{% static 'kmeans/workspace.js' %}?v=11"></script>
 
     {# Pass the server-side active algorithm to the JS #}
     <script>
@@ -322,13 +322,14 @@
             if (selectHierarchical) selectHierarchical.addEventListener("click", () => switchAlgorithm('hierarchical'));
         });
 
-        // Script de importación de tu equipo (DBSCAN / KMeans)
+        // Script de importación de tu equipo (DBSCAN / KMeans / Jerárquico)
         (() => {
             const fileInput = document.getElementById("modelFileInput");
             const importForm = document.getElementById("importModelForm");
             if (!fileInput || !importForm) return;
             const kmeansUrl = "{% url 'kmeans:import' %}";
             const dbscanUrl = "{% url 'dbscan:import' %}";
+            const hierarchicalUrl = "{% url 'hierarchical:import' %}";
             importForm.addEventListener("submit", (event) => {
                 const file = fileInput.files[0];
                 if (!file) return;
@@ -336,8 +337,14 @@
                 const reader = new FileReader();
                 reader.addEventListener("load", () => {
                     try {
-                        importForm.action =
-                            JSON.parse(reader.result).type === "dbscan" ? dbscanUrl : kmeansUrl;
+                        const parsedType = JSON.parse(reader.result).type;
+                        if (parsedType === "dbscan") {
+                            importForm.action = dbscanUrl;
+                        } else if (parsedType === "hierarchical") {
+                            importForm.action = hierarchicalUrl;
+                        } else {
+                            importForm.action = kmeansUrl;
+                        }
                     } catch (_) {
                         importForm.action = kmeansUrl;
                     }

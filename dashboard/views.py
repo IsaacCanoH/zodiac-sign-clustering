@@ -60,9 +60,9 @@ class DashboardView(TemplateView):
         # even when their source dataset is removed or replaced.
         context['all_kmeans_runs'] = list(KMeansRun.objects.filter(is_saved=True))
         context['all_dbscan_runs'] = list(DBSCANRun.objects.filter(is_saved=True))
-        
-        all_hierarchical_runs = list(HierarchicalRun.objects.all())
-        context['all_hierarchical_runs'] = all_hierarchical_runs if dataset else []
+        context['all_hierarchical_runs'] = list(
+            HierarchicalRun.objects.filter(is_saved=True)
+        )
 
         requested_category = context.get('selected_category', '')
         requested_category_column = context.get('category_column', '')
@@ -98,10 +98,11 @@ class DashboardView(TemplateView):
                     {
                         'algorithm': 'hierarchical',
                         'run': run,
-                        # Validamos manualmente ya que HierarchicalRun aún no usa fingerprints
-                        'exact': (run.dataset_id == dataset.id) if dataset else False,
-                        'compatible': (run.dataset_id == dataset.id) if dataset else False,
-                        'reasons': [] if (dataset and run.dataset_id == dataset.id) else ['Pertenece a otro dataset local.'],
+                        **model_compatibility(
+                            dataset, run,
+                            requested_category=requested_category,
+                            requested_category_column=requested_category_column,
+                        ),
                     }
                     for run in context['all_hierarchical_runs']
                 ],

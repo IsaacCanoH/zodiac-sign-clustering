@@ -178,11 +178,23 @@
                                 {% elif item.algorithm == 'hierarchical' %}
                                     <form method="post" action="{% url 'hierarchical:activate' run.pk %}">
                                         {% csrf_token %}
+                                        <input type="hidden" name="category" value="{{ model_requested_category }}">
+                                        <input type="hidden" name="category_column" value="{{ category_column }}">
                                         <button class="btn btn-sm btn-primary" type="submit" 
-                                            {% if not item.exact %}disabled title="Activar requiere el dataset exacto."{% endif %}>
+                                            {% if not item.exact or not item.compatible %}disabled title="{{ item.reasons|join:' ' }}{% if not item.reasons %}Activar requiere el dataset exacto.{% endif %}"{% endif %}>
                                             Activar
                                         </button>
                                     </form>
+                                    <form method="post" action="{% url 'hierarchical:retrain' run.pk %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="category" value="{{ model_requested_category }}">
+                                        <input type="hidden" name="category_column" value="{{ category_column }}">
+                                        <button class="btn btn-sm btn-success" type="submit"
+                                            {% if not item.compatible %}disabled title="{{ item.reasons|join:' ' }}"{% endif %}>
+                                            Reentrenar
+                                        </button>
+                                    </form>
+                                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'hierarchical:export' run.pk %}">Descargar</a>
                                     <form method="post" action="{% url 'hierarchical:delete' run.pk %}"
                                         onsubmit="return confirm('¿Eliminar este modelo de Jerárquico?')">
                                         {% csrf_token %}

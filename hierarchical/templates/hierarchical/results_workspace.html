@@ -1,105 +1,263 @@
-{% if hierarchical_run %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-        <h2 class="h5 fw-bold mb-1">
-            Resultados de Clustering Jerárquico
-            <span class="badge bg-success ms-2 align-middle" style="font-size: 0.65em;">Entrenamiento completado</span>
-        </h2>
-        <p class="text-secondary small mb-0">Generado el {{ hierarchical_run.created_at|date:"d/m/Y H:i" }}</p>
+{% if not hierarchical_run %}
+    <div class="border rounded-3 bg-body-tertiary text-center p-5">
+        <h2 class="h6 fw-bold">No existen resultados de entrenamiento</h2>
+        <p class="text-secondary mb-0">Configura y ejecuta Clustering Jerárquico desde la pestaña de Entrenamiento.</p>
     </div>
-</div>
+{% else %}
+    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
+        <div>
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                <h2 class="h5 fw-bold mb-0">Resultados de Clustering Jerárquico</h2>
+                <span class="badge text-bg-success">Entrenamiento completado</span>
+            </div>
+            <p class="text-secondary mb-0">
+                Generado el {{ hierarchical_run.created_at|date:"d/m/Y H:i" }}
+                {% if hierarchical_run.category_filter %} · Filtro: {{ hierarchical_run.category_column }} = {{ hierarchical_run.category_label }}{% endif %}
+            </p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-primary" href="{% url 'dashboard:index' %}#training-pane">Nuevo entrenamiento</a>
+            <button class="btn btn-outline-danger" type="button" data-bs-toggle="modal" data-bs-target="#resetHierarchicalModal">
+                Reiniciar entrenamiento
+            </button>
+        </div>
+    </div>
 
-<div class="row g-3 mb-4">
-    <!-- Clusters -->
-    <div class="col-md-3">
-        <div class="card h-100 border shadow-sm">
-            <div class="card-body">
-                <p class="text-secondary small mb-1">Clusters generados (k)</p>
-                <h3 class="fw-bold mb-0">{{ hierarchical_run.cluster_count }}</h3>
-            </div>
+    <section class="mb-4" aria-labelledby="hierarchicalMetricsHeading">
+        <div class="d-flex align-items-center gap-2 mb-3">
+            <span class="badge rounded-pill text-bg-primary">1</span>
+            <h3 class="h6 fw-bold mb-0" id="hierarchicalMetricsHeading">Resumen del entrenamiento</h3>
         </div>
-    </div>
-    <!-- Registros -->
-    <div class="col-md-3">
-        <div class="card h-100 border shadow-sm">
-            <div class="card-body">
-                <p class="text-secondary small mb-1">Registros analizados</p>
-                <h3 class="fw-bold mb-0">{{ hierarchical_run.sample_count }}</h3>
-            </div>
+        <div class="row g-3">
+        <div class="col-6 col-xl-3">
+            <div class="card h-100 border-0 bg-body-tertiary"><div class="card-body">
+                <span class="small text-secondary">Clusters</span>
+                <p class="h4 fw-bold mb-0">{{ hierarchical_run.cluster_count }}</p>
+            </div></div>
         </div>
-    </div>
-    <!-- Silueta -->
-    <div class="col-md-3">
-        <div class="card h-100 border shadow-sm">
-            <div class="card-body">
-                <p class="text-secondary small mb-1">Coeficiente de silueta</p>
-                <h3 class="fw-bold mb-0">
-                    {% if hierarchical_run.silhouette_score != None %}
-                        {{ hierarchical_run.silhouette_score|floatformat:4 }}
-                    {% else %}
-                        N/A
-                    {% endif %}
-                </h3>
-            </div>
+        <div class="col-6 col-xl-3">
+            <div class="card h-100 border-0 bg-body-tertiary"><div class="card-body">
+                <span class="small text-secondary">Registros analizados</span>
+                <p class="h4 fw-bold mb-0">{{ hierarchical_run.sample_count }}</p>
+            </div></div>
         </div>
-    </div>
-    <!-- Parámetros específicos -->
-    <div class="col-md-3">
-        <div class="card h-100 border shadow-sm bg-light">
-            <div class="card-body p-3">
-                <p class="text-secondary small fw-bold mb-2">Parámetros utilizados</p>
-                <div class="small">
+        <div class="col-6 col-xl-3">
+            <div class="card h-100 border-0 bg-body-tertiary"><div class="card-body">
+                <span class="small text-secondary">Coeficiente de silueta</span>
+                <p class="h4 fw-bold mb-0">{{ hierarchical_run.silhouette|floatformat:4|default:"No disponible" }}</p>
+                {% if hierarchical_run.silhouette_sample_count < hierarchical_run.sample_count %}
+                    <span class="small text-secondary">Muestra de {{ hierarchical_run.silhouette_sample_count }} registros</span>
+                {% endif %}
+            </div></div>
+        </div>
+        <div class="col-6 col-xl-3">
+            <div class="card h-100 border-0 bg-body-tertiary"><div class="card-body">
+                <span class="small text-secondary">Parámetros</span>
+                <div class="small mt-1">
                     <div><strong>Enlace:</strong> <span class="text-capitalize">{{ hierarchical_run.linkage }}</span></div>
-                    <div class="mt-1"><strong>Métrica:</strong> <span class="text-capitalize">{{ hierarchical_run.affinity }}</span></div>
+                    <div><strong>Métrica:</strong> <span class="text-capitalize">{{ hierarchical_run.affinity }}</span></div>
+                    <div><strong>Escalado:</strong> <span class="text-capitalize">{{ hierarchical_run.scaling_method }}</span></div>
+                </div>
+            </div></div>
+        </div>
+        </div>
+        <div class="alert alert-{{ hierarchical_quality.class }} d-flex flex-column flex-md-row justify-content-between gap-2 mt-3 mb-0" role="status">
+            <div>
+                <strong>Calidad del agrupamiento: {{ hierarchical_quality.label }}</strong>
+                <span class="d-block small">{{ hierarchical_quality.description }}</span>
+            </div>
+            <span class="small align-self-md-center text-nowrap">
+                Evaluación interna mediante silueta
+            </span>
+        </div>
+    </section>
+
+    <section class="card mb-4" aria-labelledby="hierarchicalChartHeading">
+        <div class="card-header bg-white">
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="badge rounded-pill text-bg-primary">2</span>
+                <h3 class="h6 fw-bold mb-0" id="hierarchicalChartHeading">Separación visual de los clusters</h3>
+            </div>
+            <p class="small text-secondary mb-0">
+                {{ hierarchical_chart.method }}
+                {% if hierarchical_chart.displayed_count < hierarchical_chart.total_count %}
+                    Se muestran {{ hierarchical_chart.displayed_count }} de {{ hierarchical_chart.total_count }} registros para conservar la legibilidad.
+                {% endif %}
+            </p>
+        </div>
+        <div class="card-body">
+            <div class="position-relative mx-auto" style="height: min(26rem, 65vw); min-height: 19rem;">
+                <canvas id="hierarchicalClusterChart" aria-label="Gráfico de separación de clusters" role="img"></canvas>
+            </div>
+            <p class="small text-secondary text-center mb-0 mt-2">
+                Los círculos representan registros agrupados por el algoritmo jerárquico.
+            </p>
+        </div>
+    </section>
+    {{ hierarchical_chart|json_script:"hierarchical-chart-data" }}
+
+    <section class="card mb-4" aria-labelledby="hierarchicalProfilesHeading">
+        <div class="card-header bg-white">
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="badge rounded-pill text-bg-primary">3</span>
+                <h3 class="h6 fw-bold mb-0" id="hierarchicalProfilesHeading">Qué encontró el algoritmo</h3>
+            </div>
+            <p class="small text-secondary mb-0">
+                La característica principal compara la media de cada cluster con el promedio de los registros analizados.
+            </p>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Cluster</th>
+                        <th class="text-end">Registros</th>
+                        <th class="text-end">Porcentaje</th>
+                        <th>Característica principal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for profile in hierarchical_cluster_profiles %}
+                        <tr>
+                            <td><span class="badge text-bg-primary">Cluster {{ profile.cluster }}</span></td>
+                            <td class="text-end">{{ profile.size }}</td>
+                            <td class="text-end">{{ profile.percentage|floatformat:2 }}%</td>
+                            <td>{{ profile.characteristic }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    {% if hierarchical_run.comparison_column %}
+        <section class="card mb-4" aria-labelledby="hierarchicalComparisonHeading">
+            <div class="card-header bg-white d-flex flex-column flex-lg-row justify-content-between gap-2">
+                <div>
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <span class="badge rounded-pill text-bg-primary">4</span>
+                        <h3 class="h6 fw-bold mb-0" id="hierarchicalComparisonHeading">Comparación con {{ hierarchical_run.comparison_column }}</h3>
+                    </div>
+                    <p class="small text-secondary mb-0">
+                        Categorías encontradas: {{ hierarchical_run.comparison_values|join:", " }}
+                    </p>
+                </div>
+                <div class="text-lg-end">
+                    <span class="small text-secondary d-block">Coincidencia general</span>
+                    {% if hierarchical_run.overall_match_percentage is not None %}
+                        <span class="h4 fw-bold">{{ hierarchical_run.overall_match_percentage|floatformat:2 }}%</span>
+                    {% else %}
+                        <span class="h4 fw-bold text-secondary">No disponible</span>
+                    {% endif %}
+                    <span class="small text-secondary d-block">
+                        {{ hierarchical_run.comparison_valid_count }} registros comparables
+                    </span>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Cluster</th>
+                            <th>Cantidad de registros</th>
+                            <th>Categoría predominante</th>
+                            <th>Porcentaje de coincidencia</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for comparison in hierarchical_run.cluster_comparison %}
+                            <tr>
+                                <td><span class="badge text-bg-primary">Cluster {{ comparison.cluster }}</span></td>
+                                <td>
+                                    {{ comparison.record_count }}
+                                    {% if comparison.compared_count < comparison.record_count %}
+                                        <span class="small text-secondary">({{ comparison.compared_count }} comparables)</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ comparison.predominant_category }}</td>
+                                <td>
+                                    {% if comparison.match_percentage is not None %}
+                                        {{ comparison.match_percentage|floatformat:2 }}%
+                                    {% else %}
+                                        No disponible
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    {% else %}
+        <section class="border rounded-3 bg-body-tertiary p-3 mb-4" aria-label="Comparación externa no configurada">
+            <div class="d-flex align-items-start gap-3">
+                <span class="badge rounded-pill text-bg-secondary">4</span>
+                <div>
+                    <h3 class="h6 fw-bold mb-1">Comparación con una categoría conocida</h3>
+                    <p class="small text-secondary mb-0">
+                        No se seleccionó una columna de comparación para este entrenamiento. Las métricas anteriores siguen siendo válidas como evaluación interna.
+                    </p>
+                </div>
+            </div>
+        </section>
+    {% endif %}
+
+    <div class="modal fade" id="resetHierarchicalModal" tabindex="-1" aria-labelledby="resetHierarchicalModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title fs-5" id="resetHierarchicalModalLabel">Reiniciar entrenamiento</h2>
+                    <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    Se eliminarán los resultados actuales de Clustering Jerárquico. Esta acción no modifica el dataset cargado.
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
+                    <form method="post" action="{% url 'hierarchical:reset' %}">
+                        {% csrf_token %}
+                        <button class="btn btn-danger" type="submit">Eliminar y reiniciar</button>
+                    </form>
                 </div>
             </div>
         </div>
     </div>
-</div>
-
-<!-- Tabla de Comparación (Si aplica) -->
-{% if hierarchical_run.comparison_column %}
-<div class="card border shadow-sm mb-4">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
-        <div>
-            <h4 class="h6 fw-bold mb-1">Comparación con: {{ hierarchical_run.comparison_column }}</h4>
-            <p class="small text-secondary mb-0">Categorías encontradas: {{ hierarchical_run.comparison_values|join:", " }}</p>
-        </div>
-        <div class="text-end">
-            <p class="small text-secondary mb-0">Coincidencia general</p>
-            <h4 class="h5 fw-bold mb-0">{{ hierarchical_run.overall_match_percentage|floatformat:2 }}%</h4>
-            <p class="small text-secondary mb-0" style="font-size: 0.7rem;">{{ hierarchical_run.comparison_valid_count }} registros comparables</p>
-        </div>
-    </div>
-    <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-            <thead class="table-light">
-                <tr>
-                    <th class="ps-4">Cluster</th>
-                    <th>Cantidad de registros</th>
-                    <th>Categoría predominante</th>
-                    <th>Porcentaje de coincidencia</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for summary in hierarchical_run.cluster_comparison %}
-                <tr>
-                    <td class="ps-4"><span class="badge bg-primary">Cluster {{ summary.cluster }}</span></td>
-                    <td>{{ summary.record_count }}</td>
-                    <td>{{ summary.predominant_category }}</td>
-                    <td>
-                        {% if summary.match_percentage != None %}
-                            {{ summary.match_percentage|floatformat:2 }}%
-                        {% else %}
-                            <span class="text-secondary">Sin datos comparables</span>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+{% endif %}
+{% if hierarchical_run.parent_run %}
+<div class="alert alert-info border">
+    <h3 class="h6 fw-bold">Reentrenamiento v{{ hierarchical_run.version }} de "{{ hierarchical_run.parent_run.name|default:"Modelo Jerárquico" }}"</h3>
+    <div class="row small">
+        <div class="col-md-3">Registros: {{ hierarchical_run.change_summary.previous_sample_count }} → {{ hierarchical_run.change_summary.current_sample_count }}</div>
+        <div class="col-md-3">Nuevos: {{ hierarchical_run.new_record_count }}</div>
+        <div class="col-md-3">Cambios de cluster: {{ hierarchical_run.change_summary.changed_cluster_count }} ({{ hierarchical_run.change_summary.changed_cluster_percentage|default:"—" }}%)</div>
+        <div class="col-md-3">Silueta: {{ hierarchical_run.change_summary.previous_metrics.silhouette|floatformat:4|default:"—" }} → {{ hierarchical_run.silhouette|floatformat:4|default:"—" }}</div>
     </div>
 </div>
 {% endif %}
-
+{% if hierarchical_run %}
+<section class="card border-primary mt-4">
+    <div class="card-body">
+        {% if hierarchical_run.is_saved %}
+            <div class="d-flex align-items-center justify-content-between gap-3">
+                <div>
+                    <h3 class="h5 fw-bold mb-1">Modelo guardado</h3>
+                    <p class="text-secondary mb-0">Este resultado ya forma parte del catálogo de modelos.</p>
+                </div>
+                <button class="btn btn-success" type="button" disabled>Modelo guardado</button>
+            </div>
+        {% else %}
+            <h3 class="h5 fw-bold mb-1">Guardar este modelo</h3>
+            <p class="text-secondary">Este resultado es provisional. Si entrenas nuevamente sin guardarlo, será reemplazado.</p>
+            <form method="post" action="{% url 'hierarchical:save' hierarchical_run.pk %}">
+                {% csrf_token %}
+                <div class="row g-3">
+                    <div class="col-md-6"><label class="form-label" for="saveHierarchicalName">Nombre</label><input class="form-control" id="saveHierarchicalName" name="name" maxlength="150" required value="{{ hierarchical_run.name }}"></div>
+                    <div class="col-md-6"><label class="form-label" for="saveHierarchicalTopic">Tema</label><input class="form-control" id="saveHierarchicalTopic" name="topic" maxlength="150" value="{{ hierarchical_run.topic }}"></div>
+                    <div class="col-12"><label class="form-label" for="saveHierarchicalDescription">Descripción</label><textarea class="form-control" id="saveHierarchicalDescription" name="description" rows="2">{{ hierarchical_run.description }}</textarea></div>
+                    <div class="col-12 text-end"><button class="btn btn-primary px-4" type="submit">Guardar modelo</button></div>
+                </div>
+            </form>
+        {% endif %}
+    </div>
+</section>
 {% endif %}
