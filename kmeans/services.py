@@ -7,10 +7,12 @@ from decimal import Decimal
 import numpy as np
 from django.core.paginator import Paginator
 from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
 from datasets.equivalences import canonical_number
+from datasets.model_validation import dataset_fingerprint
 from datasets.services import filter_dataset_by_category
 
 from .models import KMeansRun
@@ -18,9 +20,10 @@ from .models import KMeansRun
 
 MIN_CLUSTERS = 2
 MAX_CLUSTERS = 10
-RESULT_PAGE_SIZE = 50
+RESULT_PAGE_SIZE = 25
 RANDOM_STATE = 42
 MAX_SILHOUETTE_SAMPLES = 2000
+MAX_CHART_POINTS = 2000
 IDENTIFIER_NAMES = {
     'id',
     'identificador',
@@ -395,6 +398,8 @@ def train_kmeans(
 
     return KMeansRun.objects.create(
         dataset=dataset,
+        dataset_fingerprint=dataset_fingerprint(dataset),
+        dataset_source_name=dataset.source_name,
         cluster_count=cluster_count,
         selected_columns=selected_columns,
         assignments=assignments,
@@ -417,11 +422,184 @@ def train_kmeans(
 
 def clear_kmeans_runs(dataset):
     """Remove every K-Means result associated with the active dataset."""
-    dataset.kmeans_runs.all().delete()
+    dataset.kmeans_runs.filter(
+        dataset_fingerprint=dataset_fingerprint(dataset)
+    ).delete()
+
+
+def _silhouette_interpretation(score):
+    if score is None:
+        return {
+            'label': 'No disponible',
+            'description': (
+                'No fue posible calcular la separación interna de los clusters.'
+            ),
+            'class': 'secondary',
+        }
+    if score >= 0.71:
+        label = 'Separación fuerte'
+        description = 'Los clusters están claramente separados entre sí.'
+        style = 'success'
+    elif score >= 0.51:
+        label = 'Separación adecuada'
+        description = 'Los clusters presentan una estructura diferenciada.'
+        style = 'primary'
+    elif score >= 0.26:
+        label = 'Separación débil'
+        description = (
+            'Existe agrupamiento, aunque algunos registros pueden solaparse.'
+        )
+        style = 'warning'
+    elif score >= 0:
+        label = 'Clusters poco definidos'
+        description = (
+            'La separación encontrada es baja y debe interpretarse con cautela.'
+        )
+        style = 'warning'
+    else:
+        label = 'Agrupamiento deficiente'
+        description = (
+            'Varios registros podrían estar asignados a un cluster inadecuado.'
+        )
+        style = 'danger'
+    return {'label': label, 'description': description, 'class': style}
+
+
+def _result_matrix(dataset, run):
+    rows = [
+        (
+            assignment['row_number'],
+            dataset.records[assignment['row_number'] - 1],
+        )
+        for assignment in run.assignments
+    ]
+    matrix, _ = _build_matrix(rows, run.selected_columns)
+    return matrix
+
+
+def _cluster_profiles(run, matrix):
+    means = matrix.mean(axis=0)
+    deviations = matrix.std(axis=0)
+    profiles = []
+    for centroid in run.centroids:
+        values = np.asarray(centroid['values'], dtype=float)
+        comparable_deviations = np.divide(
+            values - means,
+            deviations,
+            out=np.zeros_like(values),
+            where=deviations > 0,
+        )
+        feature_index = int(np.argmax(np.abs(comparable_deviations)))
+        difference = comparable_deviations[feature_index]
+        if abs(difference) < 0.25:
+            characteristic = 'Valores cercanos al promedio general'
+        else:
+            direction = 'por encima' if difference > 0 else 'por debajo'
+            characteristic = (
+                f'{run.selected_columns[feature_index]} {direction} del promedio '
+                f'({values[feature_index]:.2f} frente a '
+                f'{means[feature_index]:.2f})'
+            )
+        size = int(run.cluster_sizes.get(str(centroid['cluster']), 0))
+        profiles.append(
+            {
+                'cluster': centroid['cluster'],
+                'size': size,
+                'percentage': round(size * 100 / run.sample_count, 2),
+                'characteristic': characteristic,
+            }
+        )
+    return profiles
+
+
+def _chart_context(run, matrix):
+    feature_count = len(run.selected_columns)
+    centers = np.asarray(
+        [centroid['values'] for centroid in run.centroids],
+        dtype=float,
+    )
+    if feature_count == 1:
+        coordinates = np.column_stack((matrix[:, 0], np.zeros(len(matrix))))
+        center_coordinates = np.column_stack(
+            (centers[:, 0], np.zeros(len(centers)))
+        )
+        x_label = run.selected_columns[0]
+        y_label = ''
+        method = 'Valores originales de la variable seleccionada.'
+        projected = False
+    elif feature_count == 2:
+        coordinates = matrix[:, :2]
+        center_coordinates = centers[:, :2]
+        x_label, y_label = run.selected_columns
+        method = 'Valores originales de las dos variables seleccionadas.'
+        projected = False
+    else:
+        scaler = StandardScaler()
+        scaled_matrix = scaler.fit_transform(matrix)
+        pca = PCA(n_components=2)
+        coordinates = pca.fit_transform(scaled_matrix)
+        center_coordinates = pca.transform(scaler.transform(centers))
+        explained = pca.explained_variance_ratio_ * 100
+        x_label = f'Componente principal 1 ({explained[0]:.1f}%)'
+        y_label = f'Componente principal 2 ({explained[1]:.1f}%)'
+        method = (
+            'Proyección PCA calculada con las variables estandarizadas del '
+            f'entrenamiento; conserva {explained.sum():.1f}% de la variación.'
+        )
+        projected = True
+
+    displayed_indices = np.arange(len(coordinates))
+    if len(displayed_indices) > MAX_CHART_POINTS:
+        displayed_indices = np.linspace(
+            0,
+            len(displayed_indices) - 1,
+            MAX_CHART_POINTS,
+            dtype=int,
+        )
+
+    clusters = []
+    for cluster in range(1, run.cluster_count + 1):
+        points = []
+        for index in displayed_indices:
+            assignment = run.assignments[int(index)]
+            if assignment['cluster'] != cluster:
+                continue
+            points.append(
+                {
+                    'x': round(float(coordinates[index, 0]), 6),
+                    'y': round(float(coordinates[index, 1]), 6),
+                    'row': assignment['row_number'],
+                }
+            )
+        clusters.append({'cluster': cluster, 'points': points})
+
+    return {
+        'x_label': x_label,
+        'y_label': y_label,
+        'method': method,
+        'projected': projected,
+        'displayed_count': len(displayed_indices),
+        'total_count': len(coordinates),
+        'clusters': clusters,
+        'centroids': [
+            {
+                'cluster': centroid['cluster'],
+                'x': round(float(center_coordinates[index, 0]), 6),
+                'y': round(float(center_coordinates[index, 1]), 6),
+            }
+            for index, centroid in enumerate(run.centroids)
+        ],
+    }
 
 
 def build_results_context(dataset, page_number=None):
-    run = dataset.kmeans_runs.first() if dataset else None
+    run = (
+        dataset.kmeans_runs.filter(
+            dataset_fingerprint=dataset_fingerprint(dataset)
+        ).first()
+        if dataset
+        else None
+    )
     if not run:
         return {
             'kmeans_run': None,
@@ -463,8 +641,12 @@ def build_results_context(dataset, page_number=None):
             }
         )
 
+    matrix = _result_matrix(dataset, run)
     return {
         'kmeans_run': run,
+        'kmeans_quality': _silhouette_interpretation(run.silhouette),
+        'kmeans_chart': _chart_context(run, matrix),
+        'kmeans_cluster_profiles': _cluster_profiles(run, matrix),
         'kmeans_result_page': page,
         'kmeans_result_rows': result_rows,
         'kmeans_result_page_range': paginator.get_elided_page_range(

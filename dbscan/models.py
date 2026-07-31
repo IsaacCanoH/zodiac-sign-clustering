@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 
 from datasets.models import Dataset
 
@@ -11,6 +12,8 @@ class DBSCANRun(models.Model):
         on_delete=models.CASCADE,
         related_name='dbscan_runs',
     )
+    dataset_fingerprint = models.CharField(max_length=64, db_index=True)
+    dataset_source_name = models.CharField(max_length=255)
     selected_columns = models.JSONField()
     assignments = models.JSONField()
     cluster_sizes = models.JSONField()
@@ -35,9 +38,10 @@ class DBSCANRun(models.Model):
     category_filter = models.CharField(max_length=255, blank=True)
     category_label = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    activated_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        ordering = ('-created_at',)
+        ordering = ('-activated_at', '-created_at')
 
     def __str__(self):
         return (

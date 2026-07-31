@@ -79,10 +79,9 @@
                             <h3 class="h6 fw-bold mb-1">Columnas para el entrenamiento</h3>
                             <p class="small text-secondary mb-0">Solo se muestran variables numéricas con valores diferentes.</p>
                         </div>
-                        <div class="btn-group btn-group-sm" role="group" aria-label="Selección de columnas">
-                            <button class="btn btn-outline-secondary" id="selectAllKMeansColumns" type="button">Seleccionar todas</button>
-                            <button class="btn btn-outline-secondary" id="clearKMeansColumns" type="button">Deseleccionar todas</button>
-                        </div>
+                        <button class="btn btn-sm btn-outline-secondary" id="toggleKMeansColumns" type="button">
+                            Seleccionar todas
+                        </button>
                     </div>
                     <div class="card-body overflow-auto" style="max-height: 22rem;">
                         {% if numeric_columns %}

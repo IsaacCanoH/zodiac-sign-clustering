@@ -6,12 +6,16 @@
     const urlParams = new URLSearchParams(window.location.search);
     const resultsView = urlParams.get("results_view"); // 'kmeans' | 'dbscan' | null
 
-    if (
-        ["#training-pane", "#results-pane"].includes(activeHash) &&
-        window.bootstrap
-    ) {
-        const tabId =
-            activeHash === "#training-pane" ? "training-tab" : "results-tab";
+    const dashboardTabByHash = {
+        "#data-pane": "data-tab",
+        "#statistics-pane": "statistics-tab",
+        "#training-pane": "training-tab",
+        "#results-pane": "results-tab",
+        "#classified-pane": "classified-tab",
+        "#models-pane": "models-tab",
+    };
+    if (dashboardTabByHash[activeHash] && window.bootstrap) {
+        const tabId = dashboardTabByHash[activeHash];
         const tab = document.getElementById(tabId);
         if (tab) bootstrap.Tab.getOrCreateInstance(tab).show();
     }
@@ -35,6 +39,178 @@
                 bootstrap.Tab.getOrCreateInstance(pill).show();
             }
         }
+    }
+
+    // ── K-Means result chart ────────────────────────────────────────────────
+    const chartElement = document.getElementById("kmeansClusterChart");
+    const chartDataElement = document.getElementById("kmeans-chart-data");
+    if (chartElement && chartDataElement && window.Chart) {
+        const chartData = JSON.parse(chartDataElement.textContent);
+        const colors = [
+            "#0057B8",
+            "#E66100",
+            "#009E73",
+            "#6A00A8",
+            "#D7191C",
+            "#8C564B",
+            "#00A6D6",
+            "#B28A00",
+            "#444444",
+            "#CC79A7",
+        ];
+        const datasets = chartData.clusters.map((cluster, index) => ({
+            label: `Cluster ${cluster.cluster}`,
+            data: cluster.points,
+            backgroundColor: colors[index % colors.length],
+            borderColor: colors[index % colors.length],
+            pointRadius: 4,
+            pointHoverRadius: 6,
+        }));
+        datasets.push({
+            label: "Centroides",
+            data: chartData.centroids.map((centroid) => ({
+                ...centroid,
+                isCentroid: true,
+            })),
+            backgroundColor: "#212529",
+            borderColor: "#ffffff",
+            borderWidth: 2,
+            pointStyle: "crossRot",
+            pointRadius: 9,
+            pointHoverRadius: 11,
+        });
+        new Chart(chartElement, {
+            type: "scatter",
+            data: {datasets},
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {mode: "nearest", intersect: true},
+                plugins: {
+                    legend: {
+                        position: "bottom",
+                        labels: {usePointStyle: true, boxWidth: 10},
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title(items) {
+                                const point = items[0]?.raw;
+                                if (!point) return "";
+                                return point.isCentroid
+                                    ? `Centroide del cluster ${point.cluster}`
+                                    : `Registro ${point.row}`;
+                            },
+                            label(context) {
+                                const point = context.raw;
+                                const coordinates = [
+                                    `${chartData.x_label}: ${Number(point.x).toFixed(3)}`,
+                                ];
+                                if (chartData.y_label) {
+                                    coordinates.push(
+                                        `${chartData.y_label}: ${Number(point.y).toFixed(3)}`,
+                                    );
+                                }
+                                return coordinates;
+                            },
+                        },
+                    },
+                },
+                scales: {
+                    x: {
+                        title: {display: true, text: chartData.x_label},
+                    },
+                    y: {
+                        display: Boolean(chartData.y_label),
+                        title: {
+                            display: Boolean(chartData.y_label),
+                            text: chartData.y_label,
+                        },
+                        suggestedMin: chartData.y_label ? undefined : -1,
+                        suggestedMax: chartData.y_label ? undefined : 1,
+                    },
+                },
+            },
+        });
+    }
+
+    // DBSCAN result chart
+    const dbscanChartElement = document.getElementById("dbscanClusterChart");
+    const dbscanChartDataElement = document.getElementById("dbscan-chart-data");
+    if (dbscanChartElement && dbscanChartDataElement && window.Chart) {
+        const chartData = JSON.parse(dbscanChartDataElement.textContent);
+        const colors = [
+            "#0057B8",
+            "#E66100",
+            "#009E73",
+            "#6A00A8",
+            "#D7191C",
+            "#8C564B",
+            "#00A6D6",
+            "#B28A00",
+            "#CC79A7",
+        ];
+        let colorIndex = 0;
+        const datasets = chartData.groups.map((group) => {
+            const isNoise = group.cluster === -1;
+            const color = isNoise ? "#6C757D" : colors[colorIndex++ % colors.length];
+            return {
+                label: group.label,
+                data: group.points,
+                backgroundColor: color,
+                borderColor: color,
+                pointStyle: "circle",
+                pointRadius: isNoise ? 3 : 4,
+                pointHoverRadius: 6,
+            };
+        });
+        new Chart(dbscanChartElement, {
+            type: "scatter",
+            data: {datasets},
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {mode: "nearest", intersect: true},
+                plugins: {
+                    legend: {
+                        position: "bottom",
+                        labels: {usePointStyle: true, boxWidth: 10},
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title(items) {
+                                return items[0]?.raw
+                                    ? `Registro ${items[0].raw.row}`
+                                    : "";
+                            },
+                            label(context) {
+                                const point = context.raw;
+                                const coordinates = [
+                                    `${chartData.x_label}: ${Number(point.x).toFixed(3)}`,
+                                ];
+                                if (chartData.y_label) {
+                                    coordinates.push(
+                                        `${chartData.y_label}: ${Number(point.y).toFixed(3)}`,
+                                    );
+                                }
+                                return coordinates;
+                            },
+                        },
+                    },
+                },
+                scales: {
+                    x: {title: {display: true, text: chartData.x_label}},
+                    y: {
+                        display: Boolean(chartData.y_label),
+                        title: {
+                            display: Boolean(chartData.y_label),
+                            text: chartData.y_label,
+                        },
+                        suggestedMin: chartData.y_label ? undefined : -1,
+                        suggestedMax: chartData.y_label ? undefined : 1,
+                    },
+                },
+            },
+        });
     }
 
     // ── Algorithm selector (dropdown in training pane) ───────────────────────
@@ -103,12 +279,23 @@
         const selectedCount = document.getElementById("kmeansSelectedCount");
         const trainButton = document.getElementById("trainKMeansButton");
         const comparisonColumn = document.getElementById("comparisonColumn");
+        const toggleColumnsButton = document.getElementById("toggleKMeansColumns");
 
         const updateCount = () => {
             const count = checkboxes.filter((cb) => cb.checked).length;
             if (selectedCount) {
                 selectedCount.textContent =
                     `${count} ${count === 1 ? "columna seleccionada" : "columnas seleccionadas"}`;
+            }
+            const availableCheckboxes = checkboxes.filter((cb) => !cb.disabled);
+            const allSelected =
+                availableCheckboxes.length > 0 &&
+                availableCheckboxes.every((cb) => cb.checked);
+            if (toggleColumnsButton) {
+                toggleColumnsButton.textContent = allSelected
+                    ? "Deseleccionar todas"
+                    : "Seleccionar todas";
+                toggleColumnsButton.disabled = availableCheckboxes.length === 0;
             }
         };
 
@@ -126,20 +313,14 @@
             updateCount();
         };
 
-        document.getElementById("selectAllKMeansColumns")?.addEventListener(
-            "click",
-            () => {
-                checkboxes.forEach((cb) => { if (!cb.disabled) cb.checked = true; });
-                updateCount();
-            },
-        );
-        document.getElementById("clearKMeansColumns")?.addEventListener(
-            "click",
-            () => {
-                checkboxes.forEach((cb) => { cb.checked = false; });
-                updateCount();
-            },
-        );
+        toggleColumnsButton?.addEventListener("click", () => {
+            const availableCheckboxes = checkboxes.filter((cb) => !cb.disabled);
+            const shouldSelect = !availableCheckboxes.every((cb) => cb.checked);
+            availableCheckboxes.forEach((cb) => {
+                cb.checked = shouldSelect;
+            });
+            updateCount();
+        });
         checkboxes.forEach((cb) => cb.addEventListener("change", updateCount));
         comparisonColumn?.addEventListener("change", updateComparisonColumn);
         kmeansForm.addEventListener("submit", () => {
@@ -158,12 +339,23 @@
         const selectedCount = document.getElementById("dbscanSelectedCount");
         const trainButton = document.getElementById("trainDbscanButton");
         const comparisonColumn = document.getElementById("dbscanComparisonColumn");
+        const toggleColumnsButton = document.getElementById("toggleDbscanColumns");
 
         const updateCount = () => {
             const count = checkboxes.filter((cb) => cb.checked).length;
             if (selectedCount) {
                 selectedCount.textContent =
                     `${count} ${count === 1 ? "columna seleccionada" : "columnas seleccionadas"}`;
+            }
+            const availableCheckboxes = checkboxes.filter((cb) => !cb.disabled);
+            const allSelected =
+                availableCheckboxes.length > 0 &&
+                availableCheckboxes.every((cb) => cb.checked);
+            if (toggleColumnsButton) {
+                toggleColumnsButton.textContent = allSelected
+                    ? "Deseleccionar todas"
+                    : "Seleccionar todas";
+                toggleColumnsButton.disabled = availableCheckboxes.length === 0;
             }
         };
 
@@ -181,20 +373,14 @@
             updateCount();
         };
 
-        document.getElementById("selectAllDbscanColumns")?.addEventListener(
-            "click",
-            () => {
-                checkboxes.forEach((cb) => { if (!cb.disabled) cb.checked = true; });
-                updateCount();
-            },
-        );
-        document.getElementById("clearDbscanColumns")?.addEventListener(
-            "click",
-            () => {
-                checkboxes.forEach((cb) => { cb.checked = false; });
-                updateCount();
-            },
-        );
+        toggleColumnsButton?.addEventListener("click", () => {
+            const availableCheckboxes = checkboxes.filter((cb) => !cb.disabled);
+            const shouldSelect = !availableCheckboxes.every((cb) => cb.checked);
+            availableCheckboxes.forEach((cb) => {
+                cb.checked = shouldSelect;
+            });
+            updateCount();
+        });
         checkboxes.forEach((cb) => cb.addEventListener("change", updateCount));
         comparisonColumn?.addEventListener("change", updateComparisonColumn);
         dbscanForm.addEventListener("submit", () => {
