@@ -4,246 +4,200 @@
     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
 </div>
 {% endif %}
+{% if model_action_error %}
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+        {{ model_action_error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+    </div>
+{% endif %}
 
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3 mb-4">
     <div>
         <h2 class="h5 fw-bold mb-1">Modelos guardados</h2>
         <p class="text-secondary mb-0">
             Consulta, activa, descarga o importa modelos entrenados.
-            Al activar un modelo, sus resultados se muestran en la pestaña de Resultados sin necesidad de re-entrenar.
+            Activa resultados exactos o reentrena una versión compatible con datos nuevos.
         </p>
     </div>
-    {# Import button — triggers the import modal #}
-    <button class="btn btn-outline-primary flex-shrink-0" type="button" data-bs-toggle="modal"
-        data-bs-target="#importModelModal">
+    <button class="btn btn-outline-primary flex-shrink-0" type="button"
+        data-bs-toggle="modal" data-bs-target="#importModelModal">
         Importar modelo
     </button>
 </div>
 
-{% if not all_kmeans_runs and not all_dbscan_runs and not dataset.hierarchical_runs.all %}
-<div class="border rounded-3 bg-body-tertiary text-center p-5">
-    <h3 class="h6 fw-bold">No existen modelos guardados</h3>
-    <p class="text-secondary mb-0">
-        Entrena un modelo con K-Means o DBSCAN y aparecerá aquí automáticamente.
-    </p>
-</div>
+{% if not all_saved_models %}
+    <div class="border rounded-3 bg-body-tertiary text-center p-5">
+        <h3 class="h6 fw-bold">No existen modelos guardados</h3>
+        <p class="text-secondary mb-0">
+            Entrena un modelo y, después de revisar sus resultados, pulsa “Guardar modelo” (o actívalo automáticamente).
+        </p>
+    </div>
 {% else %}
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h3 class="h6 fw-semibold text-secondary text-uppercase mb-0">Todos los modelos</h3>
+        <span class="badge text-bg-light border text-secondary">
+            {{ all_saved_models|length }} modelo{{ all_saved_models|length|pluralize:",s" }}
+        </span>
+    </div>
 
-{# ── K-Means models ── #}
-{% if all_kmeans_runs %}
-<h3 class="h6 fw-semibold text-secondary text-uppercase mb-3">
-    K-Means — {{ all_kmeans_runs|length }} modelo{{ all_kmeans_runs|length|pluralize:",s" }}
-</h3>
-<div class="row g-3 mb-4">
-    {% for run in all_kmeans_runs %}
-    <div class="col-md-6 col-xl-4">
-        <div class="card h-100 border">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2 py-2">
-                <span class="badge text-bg-primary">K-Means</span>
-                <span class="small text-secondary">{{ run.created_at|date:"d/m/Y H:i" }}</span>
-            </div>
-            <div class="card-body pb-2">
-                <dl class="row g-1 small mb-0">
-                    <dt class="col-6 text-secondary fw-normal">Clusters</dt>
-                    <dd class="col-6 fw-semibold mb-0">{{ run.cluster_count }}</dd>
+    <div class="pe-2" id="savedModelsGrid" style="max-height: 35rem; overflow-y: auto; overscroll-behavior: contain;">
+        <div class="row g-3">
+            {% for item in all_saved_models %}
+                {% with run=item.run %}
+                    <div class="col-sm-6 col-lg-4 col-xl-3">
+                        <article class="card h-100 border">
+                            <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2 py-2">
+                                {% if item.algorithm == 'kmeans' %}
+                                    <span class="badge text-bg-primary">K-Means</span>
+                                {% elif item.algorithm == 'dbscan' %}
+                                    <span class="badge text-bg-secondary">DBSCAN</span>
+                                {% elif item.algorithm == 'hierarchical' %}
+                                    <span class="badge text-bg-info">Jerárquico</span>
+                                {% endif %}
+                                
+                                {% if item.exact %}
+                                    <span class="badge text-bg-success">Dataset exacto</span>
+                                {% elif item.compatible %}
+                                    <span class="badge text-bg-info">Reentrenable</span>
+                                {% else %}
+                                    <span class="badge text-bg-warning" title="{{ item.reasons|join:' ' }}">Otro dataset · No compatible</span>
+                                {% endif %}
+                            </div>
 
-                    <dt class="col-6 text-secondary fw-normal">Registros</dt>
-                    <dd class="col-6 fw-semibold mb-0">{{ run.sample_count }}</dd>
+                            <div class="card-body py-3">
+                                {% if item.algorithm == 'hierarchical' %}
+                                    <h4 class="h6 fw-bold mb-1">Modelo Jerárquico</h4>
+                                    <p class="small text-secondary mb-2">Entrenado: {{ run.created_at|date:"d/m/Y H:i" }}</p>
+                                {% else %}
+                                    <h4 class="h6 fw-bold mb-1">
+                                        {% if run.name %}{{ run.name }}{% else %}Modelo sin nombre{% endif %} 
+                                        <span class="badge text-bg-light border">v{% if run.version %}{{ run.version }}{% else %}1{% endif %}</span>
+                                    </h4>
+                                    {% if run.topic %}<p class="small mb-1"><strong>Tema:</strong> {{ run.topic }}</p>{% endif %}
+                                    <p class="small text-secondary mb-2">Entrenado: {{ run.created_at|date:"d/m/Y H:i" }}</p>
+                                    <p class="small text-truncate mb-2" title="{% if run.dataset_source_name %}{{ run.dataset_source_name }}{% else %}Archivo local{% endif %}">
+                                        {% if run.dataset_source_name %}{{ run.dataset_source_name }}{% else %}Archivo local{% endif %}
+                                    </p>
+                                {% endif %}
 
-                    <dt class="col-6 text-secondary fw-normal">Silueta</dt>
-                    <dd class="col-6 fw-semibold mb-0">
-                        {{ run.silhouette|floatformat:4|default:"—" }}
-                    </dd>
+                                <dl class="row g-1 small mb-0">
+                                    <dt class="col-7 text-secondary fw-normal">Clusters</dt>
+                                    <dd class="col-5 fw-semibold mb-0">{{ run.cluster_count }}</dd>
+                                    
+                                    <dt class="col-7 text-secondary fw-normal">Registros</dt>
+                                    <dd class="col-5 fw-semibold mb-0">{{ run.sample_count }}</dd>
+                                    
+                                    <dt class="col-7 text-secondary fw-normal">Silueta</dt>
+                                    <dd class="col-5 fw-semibold mb-0">
+                                        {% if item.algorithm == 'hierarchical' %}
+                                            {% if run.silhouette_score != None %}{{ run.silhouette_score|floatformat:4 }}{% else %}—{% endif %}
+                                        {% else %}
+                                            {% if run.silhouette != None %}{{ run.silhouette|floatformat:4 }}{% else %}—{% endif %}
+                                        {% endif %}
+                                    </dd>
+                                    
+                                    {% if item.algorithm == 'kmeans' %}
+                                        <dt class="col-7 text-secondary fw-normal">Inercia</dt>
+                                        <dd class="col-5 fw-semibold mb-0">{{ run.inertia|floatformat:2 }}</dd>
+                                    {% elif item.algorithm == 'dbscan' %}
+                                        <dt class="col-7 text-secondary fw-normal">Ruido</dt>
+                                        <dd class="col-5 fw-semibold mb-0">{{ run.noise_count }}</dd>
+                                        <dt class="col-7 text-secondary fw-normal">Epsilon</dt>
+                                        <dd class="col-5 fw-semibold mb-0">{{ run.epsilon }}</dd>
+                                        <dt class="col-7 text-secondary fw-normal">Mínimo</dt>
+                                        <dd class="col-5 fw-semibold mb-0">{{ run.min_samples }}</dd>
+                                    {% elif item.algorithm == 'hierarchical' %}
+                                        <dt class="col-7 text-secondary fw-normal">Enlace</dt>
+                                        <dd class="col-5 fw-semibold mb-0 text-capitalize">{{ run.linkage }}</dd>
+                                        <dt class="col-7 text-secondary fw-normal">Métrica</dt>
+                                        <dd class="col-5 fw-semibold mb-0 text-capitalize">{{ run.affinity }}</dd>
+                                    {% endif %}
+                                    
+                                    <dt class="col-7 text-secondary fw-normal">Variables</dt>
+                                    <dd class="col-5 fw-semibold mb-0">{{ run.selected_columns|length }}</dd>
+                                    <dt class="col-7 text-secondary fw-normal">Evaluación</dt>
+                                    <dd class="col-5 fw-semibold mb-0 text-truncate" title="{% if run.comparison_column %}{{ run.comparison_column }}{% else %}Ninguna{% endif %}">
+                                        {% if run.comparison_column %}{{ run.comparison_column }}{% else %}Ninguna{% endif %}
+                                    </dd>
+                                </dl>
+                            </div>
 
-                    <dt class="col-6 text-secondary fw-normal">Inercia</dt>
-                    <dd class="col-6 fw-semibold mb-0">{{ run.inertia|floatformat:2 }}</dd>
+                            <div class="card-footer bg-white d-flex flex-wrap gap-1">
+                                {% if item.algorithm == 'kmeans' %}
+                                    <form method="post" action="{% url 'kmeans:activate' run.pk %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="category" value="{{ model_requested_category }}">
+                                        <input type="hidden" name="category_column" value="{{ category_column }}">
+                                        <button class="btn btn-sm btn-primary" type="submit"
+                                            {% if not item.exact or not item.compatible %}disabled title="{{ item.reasons|join:' ' }}{% if not item.reasons %}Activar requiere el dataset exacto.{% endif %}"{% endif %}>
+                                            Activar
+                                        </button>
+                                    </form>
+                                    <form method="post" action="{% url 'kmeans:retrain' run.pk %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="category" value="{{ model_requested_category }}">
+                                        <input type="hidden" name="category_column" value="{{ category_column }}">
+                                        <button class="btn btn-sm btn-success" type="submit"
+                                            {% if not item.compatible %}disabled title="{{ item.reasons|join:' ' }}"{% endif %}>
+                                            Reentrenar
+                                        </button>
+                                    </form>
+                                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'kmeans:export' run.pk %}">Descargar</a>
+                                    <form method="post" action="{% url 'kmeans:delete' run.pk %}"
+                                        onsubmit="return confirm('¿Eliminar este modelo de K-Means?')">
+                                        {% csrf_token %}
+                                        <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+                                    </form>
+                                
+                                {% elif item.algorithm == 'dbscan' %}
+                                    <form method="post" action="{% url 'dbscan:activate' run.pk %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="category" value="{{ model_requested_category }}">
+                                        <input type="hidden" name="category_column" value="{{ category_column }}">
+                                        <button class="btn btn-sm btn-primary" type="submit"
+                                            {% if not item.exact or not item.compatible %}disabled title="{{ item.reasons|join:' ' }}{% if not item.reasons %}Activar requiere el dataset exacto.{% endif %}"{% endif %}>
+                                            Activar
+                                        </button>
+                                    </form>
+                                    <form method="post" action="{% url 'dbscan:retrain' run.pk %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="category" value="{{ model_requested_category }}">
+                                        <input type="hidden" name="category_column" value="{{ category_column }}">
+                                        <button class="btn btn-sm btn-success" type="submit"
+                                            {% if not item.compatible %}disabled title="{{ item.reasons|join:' ' }}"{% endif %}>
+                                            Reentrenar
+                                        </button>
+                                    </form>
+                                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'dbscan:export' run.pk %}">Descargar</a>
+                                    <form method="post" action="{% url 'dbscan:delete' run.pk %}"
+                                        onsubmit="return confirm('¿Eliminar este modelo de DBSCAN?')">
+                                        {% csrf_token %}
+                                        <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+                                    </form>
 
-                    <dt class="col-6 text-secondary fw-normal">Columnas</dt>
-                    <dd class="col-6 fw-semibold mb-0" title="{{ run.selected_columns|join:', ' }}">
-                        {{ run.selected_columns|length }} columna{{ run.selected_columns|length|pluralize:",s" }}
-                    </dd>
-
-                    {% if run.comparison_column %}
-                    <dt class="col-6 text-secondary fw-normal">Comparación</dt>
-                    <dd class="col-6 fw-semibold mb-0">{{ run.comparison_column }}</dd>
-                    {% endif %}
-                    {% if run.category_filter %}
-                    <dt class="col-6 text-secondary fw-normal">Filtro</dt>
-                    <dd class="col-6 fw-semibold mb-0">{{ run.category_label }}</dd>
-                    {% endif %}
-                </dl>
-            </div>
-            <div class="card-footer bg-white border-top-0 pt-0 pb-3">
-                <div class="d-flex flex-wrap gap-2">
-                    {# Activate: make this the current result #}
-                    <form method="post" action="{% url 'kmeans:activate' run.pk %}" class="d-inline">
-                        {% csrf_token %}
-                        <button class="btn btn-sm btn-primary" type="submit"
-                            title="Ver los resultados de este modelo en la pestaña Resultados">
-                            Activar
-                        </button>
-                    </form>
-                    {# Download JSON #}
-                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'kmeans:export' run.pk %}"
-                        title="Descargar este modelo como archivo JSON">
-                        Descargar
-                    </a>
-                    {# Delete #}
-                    <form method="post" action="{% url 'kmeans:delete' run.pk %}" class="d-inline"
-                        onsubmit="return confirm('¿Eliminar este modelo de K-Means?')">
-                        {% csrf_token %}
-                        <button class="btn btn-sm btn-outline-danger" type="submit"
-                            title="Eliminar este modelo permanentemente">
-                            Eliminar
-                        </button>
-                    </form>
-                </div>
-            </div>
+                                {% elif item.algorithm == 'hierarchical' %}
+                                    <form method="post" action="{% url 'hierarchical:activate' run.pk %}">
+                                        {% csrf_token %}
+                                        <button class="btn btn-sm btn-primary" type="submit" 
+                                            {% if not item.exact %}disabled title="Activar requiere el dataset exacto."{% endif %}>
+                                            Activar
+                                        </button>
+                                    </form>
+                                    <form method="post" action="{% url 'hierarchical:delete' run.pk %}"
+                                        onsubmit="return confirm('¿Eliminar este modelo de Jerárquico?')">
+                                        {% csrf_token %}
+                                        <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+                                    </form>
+                                {% endif %}
+                            </div>
+                        </article>
+                    </div>
+                {% endwith %}
+            {% endfor %}
         </div>
     </div>
-    {% endfor %}
-</div>
 {% endif %}
 
-{# ── DBSCAN models ── #}
-{% if all_dbscan_runs %}
-<h3 class="h6 fw-semibold text-secondary text-uppercase mb-3">
-    DBSCAN — {{ all_dbscan_runs|length }} modelo{{ all_dbscan_runs|length|pluralize:",s" }}
-</h3>
-<div class="row g-3">
-    {% for run in all_dbscan_runs %}
-    <div class="col-md-6 col-xl-4">
-        <div class="card h-100 border">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2 py-2">
-                <span class="badge text-bg-secondary">DBSCAN</span>
-                <span class="small text-secondary">{{ run.created_at|date:"d/m/Y H:i" }}</span>
-            </div>
-            <div class="card-body pb-2">
-                <dl class="row g-1 small mb-0">
-                    <dt class="col-6 text-secondary fw-normal">Clusters</dt>
-                    <dd class="col-6 fw-semibold mb-0">{{ run.cluster_count }}</dd>
-
-                    <dt class="col-6 text-secondary fw-normal">Registros</dt>
-                    <dd class="col-6 fw-semibold mb-0">{{ run.sample_count }}</dd>
-
-                    <dt class="col-6 text-secondary fw-normal">Silueta</dt>
-                    <dd class="col-6 fw-semibold mb-0">
-                        {{ run.silhouette|floatformat:4|default:"—" }}
-                    </dd>
-
-                    <dt class="col-6 text-secondary fw-normal">Ruido</dt>
-                    <dd class="col-6 fw-semibold mb-0">{{ run.noise_count }} puntos</dd>
-
-                    <dt class="col-6 text-secondary fw-normal">Epsilon (ε)</dt>
-                    <dd class="col-6 fw-semibold mb-0">{{ run.epsilon }}</dd>
-
-                    <dt class="col-6 text-secondary fw-normal">Min. muestras</dt>
-                    <dd class="col-6 fw-semibold mb-0">{{ run.min_samples }}</dd>
-
-                    <dt class="col-6 text-secondary fw-normal">Columnas</dt>
-                    <dd class="col-6 fw-semibold mb-0" title="{{ run.selected_columns|join:', ' }}">
-                        {{ run.selected_columns|length }} columna{{ run.selected_columns|length|pluralize:",s" }}
-                    </dd>
-
-                    {% if run.comparison_column %}
-                    <dt class="col-6 text-secondary fw-normal">Comparación</dt>
-                    <dd class="col-6 fw-semibold mb-0">{{ run.comparison_column }}</dd>
-                    {% endif %}
-                    {% if run.category_filter %}
-                    <dt class="col-6 text-secondary fw-normal">Filtro</dt>
-                    <dd class="col-6 fw-semibold mb-0">{{ run.category_label }}</dd>
-                    {% endif %}
-                </dl>
-            </div>
-            <div class="card-footer bg-white border-top-0 pt-0 pb-3">
-                <div class="d-flex flex-wrap gap-2">
-                    <form method="post" action="{% url 'dbscan:activate' run.pk %}" class="d-inline">
-                        {% csrf_token %}
-                        <button class="btn btn-sm btn-primary" type="submit"
-                            title="Ver los resultados de este modelo en la pestaña Resultados">
-                            Activar
-                        </button>
-                    </form>
-                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'dbscan:export' run.pk %}"
-                        title="Descargar este modelo como archivo JSON">
-                        Descargar
-                    </a>
-                    <form method="post" action="{% url 'dbscan:delete' run.pk %}" class="d-inline"
-                        onsubmit="return confirm('¿Eliminar este modelo de DBSCAN?')">
-                        {% csrf_token %}
-                        <button class="btn btn-sm btn-outline-danger" type="submit"
-                            title="Eliminar este modelo permanentemente">
-                            Eliminar
-                        </button>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endfor %}
-</div>
-{% endif %}
-
-{# ── Hierarchical models ── #}
-{% if all_hierarchical_runs %}
-<h3 class="h6 fw-semibold text-secondary text-uppercase mb-3 mt-4">
-    Clustering Jerárquico — {{ all_hierarchical_runs|length }} modelo{{ all_hierarchical_runs|length|pluralize:",s" }}
-</h3>
-<div class="row g-3">
-    {% for run in all_hierarchical_runs %}
-    <div class="col-md-6 col-xl-4">
-        <div class="card h-100 border">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center gap-2 py-2">
-                <span class="badge text-bg-info">Jerárquico</span>
-                <span class="small text-secondary">{{ run.created_at|date:"d/m/Y H:i" }}</span>
-            </div>
-            <div class="card-body pb-2">
-                <dl class="row g-1 small mb-0">
-                    <dt class="col-6 text-secondary fw-normal">Clusters (k)</dt>
-                    <dd class="col-6 fw-semibold mb-0">{{ run.n_clusters }}</dd>
-
-                    <dt class="col-6 text-secondary fw-normal">Enlace</dt>
-                    <dd class="col-6 fw-semibold mb-0 text-capitalize">{{ run.linkage }}</dd>
-
-                    <dt class="col-6 text-secondary fw-normal">Métrica</dt>
-                    <dd class="col-6 fw-semibold mb-0 text-capitalize">{{ run.affinity }}</dd>
-
-                    <dt class="col-6 text-secondary fw-normal">Silueta</dt>
-                    <dd class="col-6 fw-semibold mb-0">
-                        {{ run.silhouette_score|floatformat:4|default:"—" }}
-                    </dd>
-
-                    <dt class="col-6 text-secondary fw-normal">Escalado</dt>
-                    <dd class="col-6 fw-semibold mb-0 text-capitalize">{{ run.scaling_method }}</dd>
-                </dl>
-            </div>
-            <div class="card-footer bg-white border-top-0 pt-0 pb-3">
-                <div class="d-flex flex-wrap gap-2">
-                    <form method="post" action="{% url 'hierarchical:activate' run.pk %}" class="d-inline">
-                        {% csrf_token %}
-                        <button class="btn btn-sm btn-primary" type="submit"
-                            title="Ver los resultados de este modelo en la pestaña Resultados">
-                            Activar
-                        </button>
-                    </form>
-                    <form method="post" action="{% url 'hierarchical:delete' run.pk %}" class="d-inline"
-                        onsubmit="return confirm('¿Eliminar este modelo de Clustering Jerárquico?')">
-                        {% csrf_token %}
-                        <button class="btn btn-sm btn-outline-danger" type="submit"
-                            title="Eliminar este modelo permanentemente">
-                            Eliminar
-                        </button>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endfor %}
-</div>
-{% endif %}
-{% endif %}
-
-{# ── Import model modal ── #}
 <div class="modal fade" id="importModelModal" tabindex="-1" aria-labelledby="importModelModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -259,49 +213,27 @@
                         El sistema detectará automáticamente si es un modelo K-Means o DBSCAN.
                     </p>
                     <label class="form-label fw-semibold" for="modelFileInput">Archivo del modelo</label>
-                    <input class="form-control" type="file" id="modelFileInput" name="model_file" accept=".json"
-                        required>
+                    <input class="form-control" type="file" id="modelFileInput" name="model_file" accept=".json" required>
+                    <fieldset class="mt-3">
+                        <legend class="fs-6 fw-semibold">Modo de importación</legend>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="import_mode" id="importExact" value="exact" checked>
+                            <label class="form-check-label" for="importExact">Restaurar resultados — requiere el dataset exacto</label>
+                        </div>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="radio" name="import_mode" id="importRetrain" value="retrain">
+                            <label class="form-check-label" for="importRetrain">Importar para reentrenar — acepta un dataset ampliado</label>
+                        </div>
+                    </fieldset>
                     <p class="small text-secondary mt-2 mb-0">
                         Solo se aceptan archivos <code>.json</code> generados por esta aplicación.
                     </p>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
-                    <button class="btn btn-primary" type="submit" id="importModelSubmit">Importar</button>
+                    <button class="btn btn-primary" type="submit">Importar</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
-
-<script>
-    (function () {
-        // Detect the model type from the JSON file and route to the correct import URL
-        const fileInput = document.getElementById('modelFileInput');
-        const importForm = document.getElementById('importModelForm');
-        const kmeans_import_url = "{% url 'kmeans:import' %}";
-        const dbscan_import_url = "{% url 'dbscan:import' %}";
-
-        if (importForm && fileInput) {
-            importForm.addEventListener('submit', function (event) {
-                const file = fileInput.files[0];
-                if (!file) return; // Let browser required validation handle it
-
-                event.preventDefault(); // Read file first, then submit
-
-                const reader = new FileReader();
-                reader.onload = function (e) {
-                    try {
-                        const data = JSON.parse(e.target.result);
-                        importForm.action =
-                            data.type === 'dbscan' ? dbscan_import_url : kmeans_import_url;
-                    } catch (_) {
-                        importForm.action = kmeans_import_url; // fallback, server will reject
-                    }
-                    importForm.submit();
-                };
-                reader.readAsText(file);
-            });
-        }
-    })();
-</script>

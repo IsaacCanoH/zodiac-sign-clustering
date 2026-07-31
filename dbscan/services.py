@@ -5,12 +5,22 @@ from collections import Counter
 from decimal import Decimal
 
 import numpy as np
+import sklearn
 from django.core.paginator import Paginator
+from django.utils import timezone
 from sklearn.cluster import DBSCAN
+from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
 from datasets.equivalences import canonical_number
+from datasets.model_validation import (
+    build_change_summary,
+    build_schema_profile,
+    dataset_fingerprint,
+    dataset_schema_fingerprint,
+    training_config_fingerprint,
+)
 from datasets.services import filter_dataset_by_category
 
 from .models import DBSCANRun
@@ -19,6 +29,7 @@ from .models import DBSCANRun
 RESULT_PAGE_SIZE = 50
 RANDOM_STATE = 42
 MAX_SILHOUETTE_SAMPLES = 2000
+MAX_CHART_POINTS = 2000
 IDENTIFIER_NAMES = {
     'id',
     'identificador',
@@ -136,8 +147,10 @@ def detect_categorical_columns(dataset, records):
     return columns
 
 
-def _filtered_rows(dataset, requested_category):
-    category_filter = filter_dataset_by_category(dataset, requested_category)
+def _filtered_rows(dataset, requested_category, requested_category_column=None):
+    category_filter = filter_dataset_by_category(
+        dataset, requested_category, requested_category_column
+    )
     selected_category = category_filter['selected_category']
     category_column = category_filter['category_column']
 
@@ -151,7 +164,9 @@ def _filtered_rows(dataset, requested_category):
     return category_filter, rows
 
 
-def build_dbscan_training_setup(dataset, requested_category=None):
+def build_dbscan_training_setup(
+    dataset, requested_category=None, requested_category_column=None
+):
     if not dataset:
         return {
             'dbscan_numeric_columns': [],
@@ -162,7 +177,9 @@ def build_dbscan_training_setup(dataset, requested_category=None):
             'dbscan_default_min_samples': DEFAULT_MIN_SAMPLES,
         }
 
-    category_filter, rows = _filtered_rows(dataset, requested_category)
+    category_filter, rows = _filtered_rows(
+        dataset, requested_category, requested_category_column
+    )
     records = [record for _, record in rows]
     numeric_columns = detect_numeric_columns(dataset, records)
     categorical_columns = detect_categorical_columns(dataset, records)
@@ -173,6 +190,7 @@ def build_dbscan_training_setup(dataset, requested_category=None):
         'dbscan_can_train': bool(numeric_columns) and len(records) >= 2,
         'dbscan_training_category': category_filter['selected_category'],
         'dbscan_training_category_label': category_filter['selected_category_label'],
+        'category_column': category_filter['category_column'],
         'dbscan_default_epsilon': DEFAULT_EPSILON,
         'dbscan_default_min_samples': DEFAULT_MIN_SAMPLES,
     }
@@ -288,8 +306,16 @@ def train_dbscan(
     min_samples,
     requested_category=None,
     comparison_column='',
+    requested_category_column=None,
+    name='',
+    topic='',
+    description='',
+    parent_run=None,
+    save_immediately=True,
 ):
-    category_filter, rows = _filtered_rows(dataset, requested_category)
+    category_filter, rows = _filtered_rows(
+        dataset, requested_category, requested_category_column
+    )
     records = [record for _, record in rows]
     allowed_columns = {
         column['name'] for column in detect_numeric_columns(dataset, records)
@@ -314,7 +340,7 @@ def train_dbscan(
         raise DBSCANTrainingError(
             'La columna de comparación no puede utilizarse para entrenar.'
         )
-    if epsilon <= 0:
+    if not math.isfinite(epsilon) or epsilon <= 0:
         raise DBSCANTrainingError('El valor de ε (epsilon) debe ser mayor a 0.')
     if min_samples < 2:
         raise DBSCANTrainingError(
@@ -331,7 +357,12 @@ def train_dbscan(
     scaled_matrix = scaler.fit_transform(matrix)
 
     estimator = DBSCAN(eps=epsilon, min_samples=min_samples, metric='euclidean')
-    raw_labels = estimator.fit_predict(scaled_matrix)
+    try:
+        raw_labels = estimator.fit_predict(scaled_matrix)
+    except (TypeError, ValueError) as error:
+        raise DBSCANTrainingError(
+            'No fue posible ejecutar DBSCAN con los parámetros seleccionados.'
+        ) from error
 
     labels = raw_labels.tolist()
     unique_labels = set(labels)
@@ -373,9 +404,13 @@ def train_dbscan(
     non_noise_mask = [label != -1 for label in display_labels]
     non_noise_labels = [label for label, keep in zip(display_labels, non_noise_mask) if keep]
     non_noise_matrix = scaled_matrix[non_noise_mask]
-    silhouette_sample_count = min(len(non_noise_labels), MAX_SILHOUETTE_SAMPLES)
+    silhouette_sample_count = 0
     score = None
     if len(set(non_noise_labels)) > 1 and len(non_noise_labels) > 1:
+        silhouette_sample_count = min(
+            len(non_noise_labels),
+            MAX_SILHOUETTE_SAMPLES,
+        )
         score = float(
             silhouette_score(
                 non_noise_matrix,
@@ -402,8 +437,28 @@ def train_dbscan(
         }
     )
 
+    change_summary = {}
+    if parent_run:
+        change_summary = build_change_summary(
+            parent_run, assignments, len(rows),
+            {
+                'previous': {
+                    'silhouette': parent_run.silhouette,
+                    'noise_count': parent_run.noise_count,
+                    'cluster_count': parent_run.cluster_count,
+                },
+                'current': {
+                    'silhouette': score, 'noise_count': noise_count,
+                    'cluster_count': cluster_count,
+                },
+            },
+        )
+    core_indices = getattr(estimator, 'core_sample_indices_', np.asarray([], dtype=int))
+    dataset.dbscan_runs.filter(is_saved=False).delete()
     return DBSCANRun.objects.create(
         dataset=dataset,
+        dataset_fingerprint=dataset_fingerprint(dataset),
+        dataset_source_name=dataset.source_name,
         selected_columns=selected_columns,
         assignments=assignments,
         cluster_sizes=cluster_sizes,
@@ -422,16 +477,181 @@ def train_dbscan(
         overall_match_percentage=comparison['overall_match_percentage'],
         category_filter=category_filter['selected_category'],
         category_label=category_filter['selected_category_label'],
+        category_column=category_filter['category_column'] or '',
+        name=(name or (parent_run.name if parent_run else '') or 'Modelo DBSCAN'),
+        topic=topic or (parent_run.topic if parent_run else ''),
+        description=description or (parent_run.description if parent_run else ''),
+        parent_run=parent_run,
+        version=(parent_run.version + 1 if parent_run else 1),
+        source_row_count=len(dataset.records),
+        new_record_count=change_summary.get('new_record_count', 0),
+        dataset_schema_fingerprint=dataset_schema_fingerprint(dataset),
+        training_config_fingerprint=training_config_fingerprint(
+            'dbscan', selected_columns,
+            category_filter=category_filter['selected_category'],
+            comparison_column=comparison_column,
+            epsilon=epsilon, min_samples=min_samples,
+            category_column=category_filter['category_column'] or '',
+        ),
+        schema_profile=build_schema_profile(dataset),
+        preprocessing_state={
+            'mean': scaler.mean_.tolist(),
+            'scale': scaler.scale_.tolist(),
+            'variance': scaler.var_.tolist(),
+            'imputed_values': imputed_values,
+        },
+        estimator_state={
+            'core_sample_indices': core_indices.tolist(),
+            'components': getattr(
+                estimator, 'components_', np.empty((0, len(selected_columns)))
+            ).tolist(),
+            'parameters': {'epsilon': epsilon, 'min_samples': min_samples},
+            'strategy': 'full_refit',
+        },
+        library_versions={'scikit_learn': sklearn.__version__, 'numpy': np.__version__},
+        change_summary=change_summary,
+        is_saved=save_immediately,
+        saved_at=(timezone.now() if save_immediately else None),
     )
 
 
 def clear_dbscan_runs(dataset):
-    """Remove every DBSCAN result associated with the active dataset."""
-    dataset.dbscan_runs.all().delete()
+    """Discard provisional DBSCAN results while preserving saved models."""
+    dataset.dbscan_runs.filter(
+        dataset_fingerprint=dataset_fingerprint(dataset),
+        is_saved=False,
+    ).delete()
+
+
+def _silhouette_interpretation(score):
+    if score is None:
+        return {
+            'label': 'No disponible',
+            'description': (
+                'Se necesita más de un cluster con registros no considerados ruido.'
+            ),
+            'class': 'secondary',
+        }
+    if score >= 0.71:
+        return {
+            'label': 'Separación fuerte',
+            'description': 'Los clusters están claramente separados entre sí.',
+            'class': 'success',
+        }
+    if score >= 0.51:
+        return {
+            'label': 'Separación adecuada',
+            'description': 'Los clusters presentan una estructura diferenciada.',
+            'class': 'primary',
+        }
+    if score >= 0.26:
+        return {
+            'label': 'Separación débil',
+            'description': 'Existe agrupamiento, aunque algunos registros se solapan.',
+            'class': 'warning',
+        }
+    if score >= 0:
+        return {
+            'label': 'Clusters poco definidos',
+            'description': 'La separación es baja y debe interpretarse con cautela.',
+            'class': 'warning',
+        }
+    return {
+        'label': 'Agrupamiento deficiente',
+        'description': 'La estructura encontrada presenta asignaciones poco coherentes.',
+        'class': 'danger',
+    }
+
+
+def _result_matrix(dataset, run):
+    rows = [
+        (
+            assignment['row_number'],
+            dataset.records[assignment['row_number'] - 1],
+        )
+        for assignment in run.assignments
+    ]
+    matrix, _ = _build_matrix(rows, run.selected_columns)
+    return matrix
+
+
+def _chart_context(run, matrix):
+    feature_count = len(run.selected_columns)
+    if feature_count == 1:
+        coordinates = np.column_stack((matrix[:, 0], np.zeros(len(matrix))))
+        x_label = run.selected_columns[0]
+        y_label = ''
+        method = 'Valores originales de la variable seleccionada.'
+        projected = False
+    elif feature_count == 2:
+        coordinates = matrix[:, :2]
+        x_label, y_label = run.selected_columns
+        method = 'Valores originales de las dos variables seleccionadas.'
+        projected = False
+    else:
+        scaled_matrix = StandardScaler().fit_transform(matrix)
+        pca = PCA(n_components=2)
+        coordinates = pca.fit_transform(scaled_matrix)
+        explained = pca.explained_variance_ratio_ * 100
+        x_label = f'Componente principal 1 ({explained[0]:.1f}%)'
+        y_label = f'Componente principal 2 ({explained[1]:.1f}%)'
+        method = (
+            'Proyección PCA calculada con las variables estandarizadas; conserva '
+            f'{explained.sum():.1f}% de la variación.'
+        )
+        projected = True
+
+    displayed_indices = np.arange(len(coordinates))
+    if len(displayed_indices) > MAX_CHART_POINTS:
+        displayed_indices = np.linspace(
+            0,
+            len(displayed_indices) - 1,
+            MAX_CHART_POINTS,
+            dtype=int,
+        )
+
+    groups = []
+    for cluster in [-1, *range(1, run.cluster_count + 1)]:
+        points = []
+        for index in displayed_indices:
+            assignment = run.assignments[int(index)]
+            if assignment['cluster'] != cluster:
+                continue
+            points.append(
+                {
+                    'x': round(float(coordinates[index, 0]), 6),
+                    'y': round(float(coordinates[index, 1]), 6),
+                    'row': assignment['row_number'],
+                }
+            )
+        if points:
+            groups.append(
+                {
+                    'cluster': cluster,
+                    'label': 'Ruido' if cluster == -1 else f'Cluster {cluster}',
+                    'points': points,
+                }
+            )
+
+    return {
+        'x_label': x_label,
+        'y_label': y_label,
+        'method': method,
+        'projected': projected,
+        'displayed_count': len(displayed_indices),
+        'total_count': len(coordinates),
+        'groups': groups,
+    }
 
 
 def build_dbscan_results_context(dataset, page_number=None):
-    run = dataset.dbscan_runs.first() if dataset else None
+    run = (
+        dataset.dbscan_runs.filter(
+            dataset_fingerprint=dataset_fingerprint(dataset)
+        ).first()
+        if dataset
+        else None
+    )
     if not run:
         return {
             'dbscan_run': None,
@@ -444,7 +664,10 @@ def build_dbscan_results_context(dataset, page_number=None):
     page = paginator.get_page(page_number)
     result_rows = []
     for assignment in page.object_list:
-        record = dataset.records[assignment['row_number'] - 1]
+        row_index = assignment.get('row_number', 0) - 1
+        if row_index < 0 or row_index >= len(dataset.records):
+            continue
+        record = dataset.records[row_index]
         result_rows.append(
             {
                 **assignment,
@@ -477,8 +700,11 @@ def build_dbscan_results_context(dataset, page_number=None):
             }
         )
 
+    matrix = _result_matrix(dataset, run)
     return {
         'dbscan_run': run,
+        'dbscan_quality': _silhouette_interpretation(run.silhouette),
+        'dbscan_chart': _chart_context(run, matrix),
         'dbscan_result_page': page,
         'dbscan_result_rows': result_rows,
         'dbscan_result_page_range': paginator.get_elided_page_range(

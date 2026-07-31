@@ -5,12 +5,22 @@ from collections import Counter
 from decimal import Decimal
 
 import numpy as np
+import sklearn
 from django.core.paginator import Paginator
+from django.utils import timezone
 from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
 from datasets.equivalences import canonical_number
+from datasets.model_validation import (
+    build_change_summary,
+    build_schema_profile,
+    dataset_fingerprint,
+    dataset_schema_fingerprint,
+    training_config_fingerprint,
+)
 from datasets.services import filter_dataset_by_category
 
 from .models import KMeansRun
@@ -18,9 +28,10 @@ from .models import KMeansRun
 
 MIN_CLUSTERS = 2
 MAX_CLUSTERS = 10
-RESULT_PAGE_SIZE = 50
+RESULT_PAGE_SIZE = 25
 RANDOM_STATE = 42
 MAX_SILHOUETTE_SAMPLES = 2000
+MAX_CHART_POINTS = 2000
 IDENTIFIER_NAMES = {
     'id',
     'identificador',
@@ -129,8 +140,10 @@ def detect_categorical_columns(dataset, records):
     return columns
 
 
-def _filtered_rows(dataset, requested_category):
-    category_filter = filter_dataset_by_category(dataset, requested_category)
+def _filtered_rows(dataset, requested_category, requested_category_column=None):
+    category_filter = filter_dataset_by_category(
+        dataset, requested_category, requested_category_column
+    )
     selected_category = category_filter['selected_category']
     category_column = category_filter['category_column']
 
@@ -144,7 +157,9 @@ def _filtered_rows(dataset, requested_category):
     return category_filter, rows
 
 
-def build_training_setup(dataset, requested_category=None):
+def build_training_setup(
+    dataset, requested_category=None, requested_category_column=None
+):
     if not dataset:
         return {
             'numeric_columns': [],
@@ -154,7 +169,9 @@ def build_training_setup(dataset, requested_category=None):
             'can_train': False,
         }
 
-    category_filter, rows = _filtered_rows(dataset, requested_category)
+    category_filter, rows = _filtered_rows(
+        dataset, requested_category, requested_category_column
+    )
     records = [record for _, record in rows]
     numeric_columns = detect_numeric_columns(dataset, records)
     categorical_columns = detect_categorical_columns(dataset, records)
@@ -168,6 +185,7 @@ def build_training_setup(dataset, requested_category=None):
         'can_train': bool(numeric_columns) and max_clusters >= MIN_CLUSTERS,
         'training_category': category_filter['selected_category'],
         'training_category_label': category_filter['selected_category_label'],
+        'category_column': category_filter['category_column'],
     }
 
 
@@ -292,8 +310,16 @@ def train_kmeans(
     cluster_count,
     requested_category=None,
     comparison_column='',
+    requested_category_column=None,
+    name='',
+    topic='',
+    description='',
+    parent_run=None,
+    save_immediately=True,
 ):
-    category_filter, rows = _filtered_rows(dataset, requested_category)
+    category_filter, rows = _filtered_rows(
+        dataset, requested_category, requested_category_column
+    )
     records = [record for _, record in rows]
     allowed_columns = {
         column['name'] for column in detect_numeric_columns(dataset, records)
@@ -334,13 +360,27 @@ def train_kmeans(
 
     scaler = StandardScaler()
     scaled_matrix = scaler.fit_transform(matrix)
+    estimator_options = {
+        'n_clusters': cluster_count,
+        'n_init': 10,
+        'max_iter': 300,
+        'random_state': RANDOM_STATE,
+        'algorithm': 'lloyd',
+    }
+    if parent_run is not None:
+        if parent_run.cluster_count != cluster_count:
+            raise KMeansTrainingError(
+                'El número de clusters no coincide con el modelo original.'
+            )
+        initial_original = np.asarray(
+            [item['values'] for item in parent_run.centroids], dtype=float
+        )
+        estimator_options['init'] = scaler.transform(initial_original)
+        estimator_options['n_init'] = 1
+    else:
+        estimator_options['init'] = 'k-means++'
     estimator = KMeans(
-        n_clusters=cluster_count,
-        init='k-means++',
-        n_init=10,
-        max_iter=300,
-        random_state=RANDOM_STATE,
-        algorithm='lloyd',
+        **estimator_options,
     )
     labels = estimator.fit_predict(scaled_matrix)
     original_centers = scaler.inverse_transform(estimator.cluster_centers_)
@@ -393,8 +433,30 @@ def train_kmeans(
         }
     )
 
+    change_summary = {}
+    if parent_run:
+        change_summary = build_change_summary(
+            parent_run, assignments, len(rows),
+            {
+                'previous': {
+                    'silhouette': parent_run.silhouette,
+                    'inertia': parent_run.inertia,
+                },
+                'current': {'silhouette': score, 'inertia': float(estimator.inertia_)},
+            },
+        )
+        shifts = []
+        for old, new in zip(parent_run.centroids, centroids, strict=True):
+            shifts.append(round(float(np.linalg.norm(
+                np.asarray(old['values']) - np.asarray(new['values'])
+            )), 6))
+        change_summary['centroid_shifts'] = shifts
+
+    dataset.kmeans_runs.filter(is_saved=False).delete()
     return KMeansRun.objects.create(
         dataset=dataset,
+        dataset_fingerprint=dataset_fingerprint(dataset),
+        dataset_source_name=dataset.source_name,
         cluster_count=cluster_count,
         selected_columns=selected_columns,
         assignments=assignments,
@@ -412,16 +474,227 @@ def train_kmeans(
         overall_match_percentage=comparison['overall_match_percentage'],
         category_filter=category_filter['selected_category'],
         category_label=category_filter['selected_category_label'],
+        category_column=category_filter['category_column'] or '',
+        name=(name or (parent_run.name if parent_run else '') or 'Modelo K-Means'),
+        topic=topic or (parent_run.topic if parent_run else ''),
+        description=description or (parent_run.description if parent_run else ''),
+        parent_run=parent_run,
+        version=(parent_run.version + 1 if parent_run else 1),
+        source_row_count=len(dataset.records),
+        new_record_count=change_summary.get('new_record_count', 0),
+        dataset_schema_fingerprint=dataset_schema_fingerprint(dataset),
+        training_config_fingerprint=training_config_fingerprint(
+            'kmeans', selected_columns,
+            category_filter=category_filter['selected_category'],
+            comparison_column=comparison_column,
+            cluster_count=cluster_count,
+            category_column=category_filter['category_column'] or '',
+        ),
+        schema_profile=build_schema_profile(dataset),
+        preprocessing_state={
+            'mean': scaler.mean_.tolist(),
+            'scale': scaler.scale_.tolist(),
+            'variance': scaler.var_.tolist(),
+            'imputed_values': imputed_values,
+        },
+        estimator_state={
+            'normalized_centroids': estimator.cluster_centers_.tolist(),
+            'iterations': int(estimator.n_iter_),
+            'parameters': {
+                'cluster_count': cluster_count, 'init': (
+                    'previous_centroids' if parent_run else 'k-means++'
+                ), 'n_init': estimator_options['n_init'],
+                'max_iter': 300, 'random_state': RANDOM_STATE,
+            },
+        },
+        library_versions={'scikit_learn': sklearn.__version__, 'numpy': np.__version__},
+        change_summary=change_summary,
+        is_saved=save_immediately,
+        saved_at=(timezone.now() if save_immediately else None),
     )
 
 
 def clear_kmeans_runs(dataset):
-    """Remove every K-Means result associated with the active dataset."""
-    dataset.kmeans_runs.all().delete()
+    """Discard provisional K-Means results while preserving saved models."""
+    dataset.kmeans_runs.filter(
+        dataset_fingerprint=dataset_fingerprint(dataset),
+        is_saved=False,
+    ).delete()
+
+
+def _silhouette_interpretation(score):
+    if score is None:
+        return {
+            'label': 'No disponible',
+            'description': (
+                'No fue posible calcular la separación interna de los clusters.'
+            ),
+            'class': 'secondary',
+        }
+    if score >= 0.71:
+        label = 'Separación fuerte'
+        description = 'Los clusters están claramente separados entre sí.'
+        style = 'success'
+    elif score >= 0.51:
+        label = 'Separación adecuada'
+        description = 'Los clusters presentan una estructura diferenciada.'
+        style = 'primary'
+    elif score >= 0.26:
+        label = 'Separación débil'
+        description = (
+            'Existe agrupamiento, aunque algunos registros pueden solaparse.'
+        )
+        style = 'warning'
+    elif score >= 0:
+        label = 'Clusters poco definidos'
+        description = (
+            'La separación encontrada es baja y debe interpretarse con cautela.'
+        )
+        style = 'warning'
+    else:
+        label = 'Agrupamiento deficiente'
+        description = (
+            'Varios registros podrían estar asignados a un cluster inadecuado.'
+        )
+        style = 'danger'
+    return {'label': label, 'description': description, 'class': style}
+
+
+def _result_matrix(dataset, run):
+    rows = [
+        (
+            assignment['row_number'],
+            dataset.records[assignment['row_number'] - 1],
+        )
+        for assignment in run.assignments
+    ]
+    matrix, _ = _build_matrix(rows, run.selected_columns)
+    return matrix
+
+
+def _cluster_profiles(run, matrix):
+    means = matrix.mean(axis=0)
+    deviations = matrix.std(axis=0)
+    profiles = []
+    for centroid in run.centroids:
+        values = np.asarray(centroid['values'], dtype=float)
+        comparable_deviations = np.divide(
+            values - means,
+            deviations,
+            out=np.zeros_like(values),
+            where=deviations > 0,
+        )
+        feature_index = int(np.argmax(np.abs(comparable_deviations)))
+        difference = comparable_deviations[feature_index]
+        if abs(difference) < 0.25:
+            characteristic = 'Valores cercanos al promedio general'
+        else:
+            direction = 'por encima' if difference > 0 else 'por debajo'
+            characteristic = (
+                f'{run.selected_columns[feature_index]} {direction} del promedio '
+                f'({values[feature_index]:.2f} frente a '
+                f'{means[feature_index]:.2f})'
+            )
+        size = int(run.cluster_sizes.get(str(centroid['cluster']), 0))
+        profiles.append(
+            {
+                'cluster': centroid['cluster'],
+                'size': size,
+                'percentage': round(size * 100 / run.sample_count, 2),
+                'characteristic': characteristic,
+            }
+        )
+    return profiles
+
+
+def _chart_context(run, matrix):
+    feature_count = len(run.selected_columns)
+    centers = np.asarray(
+        [centroid['values'] for centroid in run.centroids],
+        dtype=float,
+    )
+    if feature_count == 1:
+        coordinates = np.column_stack((matrix[:, 0], np.zeros(len(matrix))))
+        center_coordinates = np.column_stack(
+            (centers[:, 0], np.zeros(len(centers)))
+        )
+        x_label = run.selected_columns[0]
+        y_label = ''
+        method = 'Valores originales de la variable seleccionada.'
+        projected = False
+    elif feature_count == 2:
+        coordinates = matrix[:, :2]
+        center_coordinates = centers[:, :2]
+        x_label, y_label = run.selected_columns
+        method = 'Valores originales de las dos variables seleccionadas.'
+        projected = False
+    else:
+        scaler = StandardScaler()
+        scaled_matrix = scaler.fit_transform(matrix)
+        pca = PCA(n_components=2)
+        coordinates = pca.fit_transform(scaled_matrix)
+        center_coordinates = pca.transform(scaler.transform(centers))
+        explained = pca.explained_variance_ratio_ * 100
+        x_label = f'Componente principal 1 ({explained[0]:.1f}%)'
+        y_label = f'Componente principal 2 ({explained[1]:.1f}%)'
+        method = (
+            'Proyección PCA calculada con las variables estandarizadas del '
+            f'entrenamiento; conserva {explained.sum():.1f}% de la variación.'
+        )
+        projected = True
+
+    displayed_indices = np.arange(len(coordinates))
+    if len(displayed_indices) > MAX_CHART_POINTS:
+        displayed_indices = np.linspace(
+            0,
+            len(displayed_indices) - 1,
+            MAX_CHART_POINTS,
+            dtype=int,
+        )
+
+    clusters = []
+    for cluster in range(1, run.cluster_count + 1):
+        points = []
+        for index in displayed_indices:
+            assignment = run.assignments[int(index)]
+            if assignment['cluster'] != cluster:
+                continue
+            points.append(
+                {
+                    'x': round(float(coordinates[index, 0]), 6),
+                    'y': round(float(coordinates[index, 1]), 6),
+                    'row': assignment['row_number'],
+                }
+            )
+        clusters.append({'cluster': cluster, 'points': points})
+
+    return {
+        'x_label': x_label,
+        'y_label': y_label,
+        'method': method,
+        'projected': projected,
+        'displayed_count': len(displayed_indices),
+        'total_count': len(coordinates),
+        'clusters': clusters,
+        'centroids': [
+            {
+                'cluster': centroid['cluster'],
+                'x': round(float(center_coordinates[index, 0]), 6),
+                'y': round(float(center_coordinates[index, 1]), 6),
+            }
+            for index, centroid in enumerate(run.centroids)
+        ],
+    }
 
 
 def build_results_context(dataset, page_number=None):
-    run = dataset.kmeans_runs.first() if dataset else None
+    run = (
+        dataset.kmeans_runs.filter(
+            dataset_fingerprint=dataset_fingerprint(dataset)
+        ).first()
+        if dataset
+        else None
+    )
     if not run:
         return {
             'kmeans_run': None,
@@ -463,8 +736,12 @@ def build_results_context(dataset, page_number=None):
             }
         )
 
+    matrix = _result_matrix(dataset, run)
     return {
         'kmeans_run': run,
+        'kmeans_quality': _silhouette_interpretation(run.silhouette),
+        'kmeans_chart': _chart_context(run, matrix),
+        'kmeans_cluster_profiles': _cluster_profiles(run, matrix),
         'kmeans_result_page': page,
         'kmeans_result_rows': result_rows,
         'kmeans_result_page_range': paginator.get_elided_page_range(

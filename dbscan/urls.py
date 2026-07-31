@@ -6,6 +6,8 @@ from .views import (
     DBSCANExportView,
     DBSCANImportView,
     DBSCANResetView,
+    DBSCANRetrainView,
+    DBSCANSaveView,
     DBSCANTrainingView,
 )
 
@@ -18,5 +20,7 @@ urlpatterns = [
     path('<int:pk>/exportar/', DBSCANExportView.as_view(), name='export'),
     path('importar/', DBSCANImportView.as_view(), name='import'),
     path('<int:pk>/activar/', DBSCANActivateView.as_view(), name='activate'),
+    path('<int:pk>/reentrenar/', DBSCANRetrainView.as_view(), name='retrain'),
+    path('<int:pk>/guardar/', DBSCANSaveView.as_view(), name='save'),
     path('<int:pk>/eliminar/', DBSCANDeleteView.as_view(), name='delete'),
 ]

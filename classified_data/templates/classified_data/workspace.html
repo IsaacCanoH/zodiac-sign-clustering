@@ -1,0 +1,170 @@
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+    <div>
+        <h2 class="h5 fw-bold mb-1">Datos clasificados</h2>
+        <p class="text-secondary mb-0">
+            Consulta los registros realmente analizados y el cluster asignado por cada algoritmo.
+        </p>
+    </div>
+    {% if classified_run %}
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <div class="dropdown">
+                <button class="btn btn-outline-secondary dropdown-toggle" type="button"
+                    data-bs-toggle="dropdown" aria-expanded="false">
+                    Algoritmo: {{ classified_algorithm_label }}
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    {% for option in classified_available_algorithms %}
+                        <li>
+                            <a class="dropdown-item{% if option.value == classified_algorithm %} active{% endif %}"
+                                href="?classified_algorithm={{ option.value }}#classified-pane">
+                                {{ option.label }}
+                            </a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+
+            <div class="dropdown">
+                <button class="btn btn-outline-secondary dropdown-toggle" type="button"
+                    data-bs-toggle="dropdown" aria-expanded="false">
+                    Cluster:
+                    {% if classified_selected_cluster %}
+                        {% for option in classified_cluster_options %}
+                            {% if option.value == classified_selected_cluster %}{{ option.label }}{% endif %}
+                        {% endfor %}
+                    {% else %}
+                        Todos
+                    {% endif %}
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li>
+                        <a class="dropdown-item{% if not classified_selected_cluster %} active{% endif %}"
+                            href="?classified_algorithm={{ classified_algorithm }}#classified-pane">
+                            Todos
+                        </a>
+                    </li>
+                    {% for option in classified_cluster_options %}
+                        <li>
+                            <a class="dropdown-item{% if option.value == classified_selected_cluster %} active{% endif %}"
+                                href="?classified_algorithm={{ classified_algorithm }}&amp;classified_cluster={{ option.value }}#classified-pane">
+                                {{ option.label }}
+                            </a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+
+            <a class="btn btn-success d-inline-flex align-items-center gap-2"
+                href="{% url 'classified_data:download' %}?algorithm={{ classified_algorithm }}{% if classified_selected_cluster %}&amp;cluster={{ classified_selected_cluster }}{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                    fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M.5 9.9a.5.5 0 0 1 .5.5V13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.6a.5.5 0 0 1 1 0V13a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.6a.5.5 0 0 1 .5-.5"/>
+                    <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/>
+                </svg>
+                <span>Descargar Excel</span>
+            </a>
+        </div>
+    {% endif %}
+</div>
+
+{% if not classified_run %}
+    <div class="border rounded-3 bg-body-tertiary text-center p-5">
+        <h3 class="h6 fw-bold">Todavía no existen datos clasificados</h3>
+        <p class="text-secondary mb-3">
+            Ejecuta un entrenamiento de K-Means o DBSCAN para consultar aquí las filas analizadas y su cluster.
+        </p>
+        {% if not dataset %}
+            <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#loadDataModal">
+                Cargar dataset
+            </button>
+        {% endif %}
+    </div>
+{% else %}
+    <div id="classified-table" class="border rounded-3 bg-white mb-3">
+        <div class="p-3">
+            <div class="row g-3 align-items-center">
+                <div class="col-md">
+                    <span class="text-secondary small d-block">Dataset activo</span>
+                    <span class="text-body-secondary text-break">{{ dataset.source_name }}</span>
+                </div>
+                <div class="col-md-auto">
+                    <span class="text-secondary small d-block">Entrenamiento</span>
+                    <span class="text-body-secondary">{{ classified_algorithm_label }} · {{ classified_run.created_at|date:"d/m/Y H:i" }}</span>
+                </div>
+                <div class="col-md-auto">
+                    <span class="text-secondary small d-block">Registros analizados</span>
+                    <span class="text-body-secondary">{{ classified_run.sample_count }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="border rounded-2 overflow-auto bg-white" style="max-height: 28rem;">
+        <table class="table table-sm table-bordered align-middle text-nowrap small mb-0">
+            <thead class="table-light sticky-top">
+                <tr>
+                    <th scope="col" class="text-center text-secondary fw-normal">Fila original</th>
+                    <th scope="col" class="fw-semibold">{{ classified_cluster_column }}</th>
+                    {% for column in dataset.columns %}
+                        <th scope="col" class="fw-semibold">{{ column }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in classified_rows %}
+                    <tr>
+                        <th scope="row" class="table-light text-center text-secondary fw-normal">{{ row.row_number }}</th>
+                        <td>
+                            {% if row.cluster == -1 %}
+                                <span class="badge text-bg-secondary">Ruido</span>
+                            {% else %}
+                                <span class="badge text-bg-primary">{{ row.cluster_label }}</span>
+                            {% endif %}
+                        </td>
+                        {% for value in row.values %}
+                            <td>{{ value|default:"—" }}</td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 pt-4">
+        <p class="text-secondary small mb-0">
+            Mostrando {{ classified_page.start_index }}–{{ classified_page.end_index }}
+            de {{ classified_page.paginator.count }} registros
+        </p>
+        {% if classified_page.paginator.num_pages > 1 %}
+            <nav aria-label="Paginación de datos clasificados">
+                <ul class="pagination pagination-sm flex-wrap mb-0">
+                    <li class="page-item{% if not classified_page.has_previous %} disabled{% endif %}">
+                        <a class="page-link px-3 py-1"
+                            href="?classified_algorithm={{ classified_algorithm }}{% if classified_selected_cluster %}&amp;classified_cluster={{ classified_selected_cluster }}{% endif %}&amp;classified_page={% if classified_page.has_previous %}{{ classified_page.previous_page_number }}{% else %}1{% endif %}#classified-pane">
+                            Anterior
+                        </a>
+                    </li>
+                    {% for page_number in classified_page_range %}
+                        {% if page_number == classified_page.paginator.ELLIPSIS %}
+                            <li class="page-item disabled"><span class="page-link px-3 py-1">{{ page_number }}</span></li>
+                        {% else %}
+                            <li class="page-item{% if page_number == classified_page.number %} active{% endif %}">
+                                <a class="page-link px-3 py-1"
+                                    href="?classified_algorithm={{ classified_algorithm }}{% if classified_selected_cluster %}&amp;classified_cluster={{ classified_selected_cluster }}{% endif %}&amp;classified_page={{ page_number }}#classified-pane"
+                                    {% if page_number == classified_page.number %}aria-current="page"{% endif %}>
+                                    {{ page_number }}
+                                </a>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+                    <li class="page-item{% if not classified_page.has_next %} disabled{% endif %}">
+                        <a class="page-link px-3 py-1"
+                            href="?classified_algorithm={{ classified_algorithm }}{% if classified_selected_cluster %}&amp;classified_cluster={{ classified_selected_cluster }}{% endif %}&amp;classified_page={% if classified_page.has_next %}{{ classified_page.next_page_number }}{% else %}{{ classified_page.paginator.num_pages }}{% endif %}#classified-pane">
+                            Siguiente
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        {% endif %}
+    </div>
+{% endif %}

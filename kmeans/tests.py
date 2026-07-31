@@ -1,9 +1,13 @@
+from copy import deepcopy
+
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 
 from datasets.models import Dataset
+from datasets.model_validation import model_compatibility
 
+from .exports import export_kmeans_run, import_kmeans_run
 from .models import KMeansRun
 from .services import (
     KMeansTrainingError,
@@ -12,6 +16,121 @@ from .services import (
     detect_numeric_columns,
     train_kmeans,
 )
+
+
+class KMeansRetrainingTests(TestCase):
+    def setUp(self):
+        self.dataset = Dataset.objects.create(
+            pk=1, source_name='original.csv',
+            columns=['categoria', 'x', 'y', 'etiqueta'],
+            records=[
+                {'categoria': 'Agua', 'x': '1', 'y': '1', 'etiqueta': 'A'},
+                {'categoria': 'Agua', 'x': '1.2', 'y': '1.1', 'etiqueta': 'A'},
+                {'categoria': 'Agua', 'x': '8', 'y': '8', 'etiqueta': 'B'},
+                {'categoria': 'Agua', 'x': '8.2', 'y': '8.1', 'etiqueta': 'B'},
+            ],
+        )
+
+    def test_persists_metadata_and_reusable_estimator_state(self):
+        run = train_kmeans(
+            self.dataset, ['x', 'y'], 2, 'agua', 'etiqueta',
+            name='Zodiaco', topic='Signos zodiacales',
+            description='Primera versión',
+        )
+        self.assertEqual(run.name, 'Zodiaco')
+        self.assertEqual(run.topic, 'Signos zodiacales')
+        self.assertEqual(len(run.preprocessing_state['mean']), 2)
+        self.assertEqual(len(run.estimator_state['normalized_centroids']), 2)
+        self.assertTrue(run.dataset_schema_fingerprint)
+        self.assertTrue(run.training_config_fingerprint)
+
+    def test_retrain_endpoint_creates_child_version_and_comparison(self):
+        parent = train_kmeans(
+            self.dataset, ['x', 'y'], 2, 'agua', 'etiqueta',
+            name='Zodiaco',
+        )
+        parent.is_saved = True
+        parent.save(update_fields=['is_saved'])
+        self.dataset.records.extend([
+            {'categoria': 'Agua', 'x': '1.1', 'y': '0.9', 'etiqueta': 'A'},
+            {'categoria': 'Agua', 'x': '8.1', 'y': '8.3', 'etiqueta': 'B'},
+        ])
+        self.dataset.source_name = 'actualizado.csv'
+        self.dataset.save()
+
+        response = self.client.post(reverse('kmeans:retrain', args=[parent.pk]))
+
+        self.assertEqual(response.status_code, 302)
+        child = KMeansRun.objects.exclude(pk=parent.pk).get()
+        self.assertEqual(child.parent_run, parent)
+        self.assertEqual(child.version, 2)
+        self.assertEqual(child.new_record_count, 2)
+        self.assertEqual(child.estimator_state['parameters']['init'], 'previous_centroids')
+        self.assertEqual(child.change_summary['current_sample_count'], 6)
+
+    def test_draft_is_hidden_until_user_saves_it(self):
+        run = train_kmeans(
+            self.dataset, ['x', 'y'], 2, name='Borrador',
+            save_immediately=False,
+        )
+        response = self.client.get(reverse('dashboard:index'))
+        self.assertNotIn(run, response.context['all_kmeans_runs'])
+
+        response = self.client.post(
+            reverse('kmeans:save', args=[run.pk]),
+            {'name': 'Modelo elegido', 'topic': 'Zodiaco', 'description': 'Útil'},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        run.refresh_from_db()
+        self.assertTrue(run.is_saved)
+        self.assertIsNotNone(run.saved_at)
+        self.assertEqual(run.name, 'Modelo elegido')
+        response = self.client.get(reverse('dashboard:index'))
+        self.assertIn(run, response.context['all_kmeans_runs'])
+
+    def test_filter_mismatch_is_explained(self):
+        run = train_kmeans(self.dataset, ['x', 'y'], 2, 'agua')
+        result = model_compatibility(
+            self.dataset, run, requested_category='tierra'
+        )
+        self.assertFalse(result['compatible'])
+        self.assertIn('filtro actual', result['reasons'][0])
+
+    def test_schema_type_change_is_incompatible(self):
+        run = train_kmeans(self.dataset, ['x', 'y'], 2)
+        for record in self.dataset.records:
+            record['x'] = 'texto'
+        self.dataset.save(update_fields=['records'])
+
+        result = model_compatibility(self.dataset, run)
+
+        self.assertFalse(result['compatible'])
+        self.assertTrue(
+            any('cambió de tipo' in reason for reason in result['reasons'])
+        )
+
+    def test_compatible_import_accepts_an_expanded_dataset(self):
+        run = train_kmeans(
+            self.dataset, ['x', 'y'], 2, 'agua', 'etiqueta',
+            requested_category_column='categoria',
+        )
+        payload = export_kmeans_run(run)
+        self.dataset.records.extend([
+            {'categoria': 'Agua', 'x': '1.1', 'y': '1', 'etiqueta': 'A'},
+            {'categoria': 'Agua', 'x': '8.1', 'y': '8', 'etiqueta': 'B'},
+        ])
+        self.dataset.save(update_fields=['records'])
+
+        imported = import_kmeans_run(
+            self.dataset, payload, allow_compatible=True
+        )
+
+        self.assertEqual(imported.dataset, self.dataset)
+        self.assertEqual(imported.dataset_fingerprint, payload['dataset_fingerprint'])
+        compatibility = model_compatibility(self.dataset, imported)
+        self.assertFalse(compatibility['exact'])
+        self.assertTrue(compatibility['compatible'])
 
 
 class KMeansServiceTests(TestCase):
@@ -273,6 +392,86 @@ class KMeansServiceTests(TestCase):
             25,
         )
 
+    def test_two_dimension_chart_uses_training_values_and_centroids(self):
+        dataset = self.create_dataset(
+            ['x', 'y'],
+            [
+                {'x': '1', 'y': '2'},
+                {'x': '1.2', 'y': '2.2'},
+                {'x': '8', 'y': '9'},
+                {'x': '8.2', 'y': '9.2'},
+            ],
+        )
+        run = train_kmeans(dataset, ['x', 'y'], 2)
+
+        context = build_results_context(dataset)
+        chart = context['kmeans_chart']
+        plotted_points = [
+            point
+            for cluster in chart['clusters']
+            for point in cluster['points']
+        ]
+
+        self.assertFalse(chart['projected'])
+        self.assertEqual(chart['x_label'], 'x')
+        self.assertEqual(chart['y_label'], 'y')
+        self.assertEqual(
+            {(point['x'], point['y']) for point in plotted_points},
+            {(1.0, 2.0), (1.2, 2.2), (8.0, 9.0), (8.2, 9.2)},
+        )
+        self.assertEqual(
+            [(item['x'], item['y']) for item in chart['centroids']],
+            [
+                (centroid['values'][0], centroid['values'][1])
+                for centroid in run.centroids
+            ],
+        )
+
+    def test_chart_uses_pca_only_for_more_than_two_training_columns(self):
+        dataset = self.create_dataset(
+            ['x', 'y', 'z'],
+            [
+                {'x': str(value), 'y': str(value * 2), 'z': str(value % 3)}
+                for value in range(1, 9)
+            ],
+        )
+        train_kmeans(dataset, ['x', 'y', 'z'], 2)
+
+        chart = build_results_context(dataset)['kmeans_chart']
+
+        self.assertTrue(chart['projected'])
+        self.assertIn('Proyección PCA', chart['method'])
+        self.assertIn('Componente principal 1', chart['x_label'])
+        self.assertEqual(
+            sum(len(cluster['points']) for cluster in chart['clusters']),
+            8,
+        )
+
+    def test_cluster_profiles_match_persisted_assignments(self):
+        dataset = self.create_dataset(
+            ['x'],
+            [{'x': value} for value in ['1', '1.1', '1.2', '9', '9.1']],
+        )
+        run = train_kmeans(dataset, ['x'], 2)
+
+        profiles = build_results_context(dataset)['kmeans_cluster_profiles']
+
+        self.assertEqual(
+            [profile['size'] for profile in profiles],
+            [
+                run.cluster_sizes[str(cluster)]
+                for cluster in range(1, run.cluster_count + 1)
+            ],
+        )
+        self.assertAlmostEqual(
+            sum(profile['percentage'] for profile in profiles),
+            100.0,
+            places=1,
+        )
+        self.assertTrue(
+            all('promedio' in profile['characteristic'] for profile in profiles)
+        )
+
     @staticmethod
     def create_dataset(columns, records):
         return Dataset.objects.create(
@@ -297,6 +496,7 @@ class KMeansViewTests(TestCase):
 
         self.assertContains(response, 'Cantidad de grupos')
         self.assertContains(response, 'Seleccionar todas')
+        self.assertNotContains(response, 'id="clearKMeansColumns"')
         self.assertContains(response, 'Edad')
         self.assertContains(response, 'Puntaje')
         self.assertContains(response, 'Columna para comparar resultados')
@@ -318,7 +518,7 @@ class KMeansViewTests(TestCase):
 
         self.assertEqual(
             response.url,
-            f"{reverse('dashboard:index')}#results-pane",
+            f"{reverse('dashboard:index')}?results_view=kmeans#results-pane",
         )
         self.assertEqual(KMeansRun.objects.count(), 1)
 
@@ -326,6 +526,10 @@ class KMeansViewTests(TestCase):
         self.assertContains(results, 'Resultados de K-Means')
         self.assertContains(results, 'Coeficiente de silueta')
         self.assertContains(results, 'Inercia')
+        self.assertContains(results, 'Calidad del agrupamiento')
+        self.assertContains(results, 'Separación visual de los clusters')
+        self.assertContains(results, 'Qué encontró el algoritmo')
+        self.assertContains(results, 'kmeansClusterChart')
         self.assertNotContains(results, 'Composición de los clusters')
         self.assertNotContains(results, 'Asignación de registros')
 
@@ -363,7 +567,7 @@ class KMeansViewTests(TestCase):
         self.assertContains(response, 'Este campo es obligatorio.')
         self.assertFalse(KMeansRun.objects.exists())
 
-    def test_replacing_dataset_removes_previous_training_results(self):
+    def test_replacing_dataset_preserves_previous_training_model(self):
         dataset = self.create_dataset()
         train_kmeans(dataset, ['Edad', 'Puntaje'], 2)
         new_file = SimpleUploadedFile(
@@ -374,7 +578,29 @@ class KMeansViewTests(TestCase):
 
         self.client.post(reverse('datasets:upload'), {'file': new_file})
 
-        self.assertFalse(KMeansRun.objects.exists())
+        self.assertTrue(KMeansRun.objects.exists())
+        dashboard = self.client.get(reverse('dashboard:index'))
+        self.assertIsNone(dashboard.context['kmeans_run'])
+        self.assertContains(dashboard, 'Otro dataset')
+
+    def test_incompatible_saved_model_cannot_be_activated_directly(self):
+        dataset = self.create_dataset()
+        run = train_kmeans(dataset, ['Edad', 'Puntaje'], 2)
+        new_file = SimpleUploadedFile(
+            'nuevo.csv',
+            b'x,y\n1,1\n2,2\n',
+            content_type='text/csv',
+        )
+        self.client.post(reverse('datasets:upload'), {'file': new_file})
+
+        response = self.client.post(
+            reverse('kmeans:activate', args=[run.pk]),
+            follow=True,
+        )
+
+        self.assertContains(response, 'pertenece a otro dataset')
+        self.assertEqual(response.request['PATH_INFO'], reverse('dashboard:index'))
+        self.assertFalse(response.context['all_saved_models'][0]['compatible'])
 
     def test_results_show_reset_training_button(self):
         dataset = self.create_dataset()
@@ -387,7 +613,9 @@ class KMeansViewTests(TestCase):
 
     def test_reset_removes_training_and_preserves_dataset(self):
         dataset = self.create_dataset()
-        train_kmeans(dataset, ['Edad', 'Puntaje'], 2)
+        train_kmeans(
+            dataset, ['Edad', 'Puntaje'], 2, save_immediately=False
+        )
 
         response = self.client.post(reverse('kmeans:reset'))
 
@@ -413,3 +641,46 @@ class KMeansViewTests(TestCase):
                 {'Nombre': 'F', 'Edad': '42', 'Puntaje': '8.9', 'Segmento': 'Adulto'},
             ],
         )
+
+
+class KMeansImportValidationTests(TestCase):
+    def setUp(self):
+        self.dataset = Dataset.objects.create(
+            pk=1,
+            source_name='datos.csv',
+            columns=['x', 'y'],
+            records=[
+                {'x': '0', 'y': '0'},
+                {'x': '0.1', 'y': '0.1'},
+                {'x': '5', 'y': '5'},
+                {'x': '5.1', 'y': '5.1'},
+            ],
+        )
+        self.run = train_kmeans(
+            self.dataset,
+            selected_columns=['x', 'y'],
+            cluster_count=2,
+        )
+        self.payload = export_kmeans_run(self.run)
+
+    def test_valid_export_import_round_trip(self):
+        self.run.delete()
+
+        imported = import_kmeans_run(self.dataset, self.payload)
+
+        self.assertEqual(imported.assignments, self.payload['assignments'])
+        self.assertEqual(build_results_context(self.dataset)['kmeans_run'], imported)
+
+    def test_import_rejects_different_dataset(self):
+        self.dataset.records[0]['x'] = '999'
+        self.dataset.save(update_fields=['records'])
+
+        with self.assertRaisesMessage(ValueError, 'conjunto de datos diferente'):
+            import_kmeans_run(self.dataset, self.payload)
+
+    def test_import_rejects_invalid_centroid_dimensions(self):
+        payload = deepcopy(self.payload)
+        payload['centroids'][0]['values'] = [1]
+
+        with self.assertRaisesMessage(ValueError, 'dimensiones'):
+            import_kmeans_run(self.dataset, payload)

@@ -30,6 +30,7 @@
         search: document.getElementById("columnSearch"),
         showAll: document.getElementById("showAllNumericColumns"),
         selectedCount: document.getElementById("selectedColumnCount"),
+        toggleCompatible: document.getElementById("toggleCompatibleColumnsButton"),
         alert: document.getElementById("equivalenceFormAlert"),
         compatibilityWarning: document.getElementById("compatibilityWarning"),
         save: document.getElementById("saveEquivalenceButton"),
@@ -270,6 +271,18 @@
 
     function updateSelectedCount() {
         elements.selectedCount.textContent = selectedColumns.size;
+        const compatibleColumns = availableColumns().filter(
+            (column) => compatibilityFor(column).compatible
+        );
+        const allCompatibleSelected =
+            compatibleColumns.length > 0 &&
+            compatibleColumns.every((column) => selectedColumns.has(column.name));
+        if (elements.toggleCompatible) {
+            elements.toggleCompatible.textContent = allCompatibleSelected
+                ? "Deseleccionar todas"
+                : "Seleccionar compatibles";
+            elements.toggleCompatible.disabled = compatibleColumns.length === 0;
+        }
     }
 
     function initializeNewConfiguration() {
@@ -452,14 +465,18 @@
         createMappingRow("", "", true);
         elements.rows.lastElementChild.querySelector("input").focus();
     });
-    document.getElementById("selectCompatibleButton").addEventListener("click", () => {
-        availableColumns().forEach((column) => {
-            if (compatibilityFor(column).compatible) selectedColumns.add(column.name);
-        });
-        renderColumnList();
-    });
-    document.getElementById("clearColumnsButton").addEventListener("click", () => {
-        selectedColumns.clear();
+    elements.toggleCompatible?.addEventListener("click", () => {
+        const compatibleColumns = availableColumns().filter(
+            (column) => compatibilityFor(column).compatible
+        );
+        const allCompatibleSelected =
+            compatibleColumns.length > 0 &&
+            compatibleColumns.every((column) => selectedColumns.has(column.name));
+        if (allCompatibleSelected) {
+            selectedColumns.clear();
+        } else {
+            compatibleColumns.forEach((column) => selectedColumns.add(column.name));
+        }
         renderColumnList();
     });
     document.getElementById("newConfigurationButton").addEventListener(

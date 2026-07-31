@@ -12,7 +12,7 @@
             </div>
             <p class="text-secondary mb-0">
                 Generado el {{ kmeans_run.created_at|date:"d/m/Y H:i" }}
-                {% if kmeans_run.category_filter %} · Filtro: {{ kmeans_run.category_label }}{% endif %}
+                {% if kmeans_run.category_filter %} · Filtro: {{ kmeans_run.category_column }} = {{ kmeans_run.category_label }}{% endif %}
             </p>
         </div>
         <div class="d-flex flex-wrap gap-2">
@@ -23,21 +23,26 @@
         </div>
     </div>
 
-    <section class="row g-3 mb-4" aria-label="Resumen del entrenamiento">
+    <section class="mb-4" aria-labelledby="kmeansMetricsHeading">
+        <div class="d-flex align-items-center gap-2 mb-3">
+            <span class="badge rounded-pill text-bg-primary">1</span>
+            <h3 class="h6 fw-bold mb-0" id="kmeansMetricsHeading">Resumen del entrenamiento</h3>
+        </div>
+        <div class="row g-3">
         <div class="col-6 col-xl-3">
-            <div class="card h-100"><div class="card-body">
+            <div class="card h-100 border-0 bg-body-tertiary"><div class="card-body">
                 <span class="small text-secondary">Clusters</span>
                 <p class="h4 fw-bold mb-0">{{ kmeans_run.cluster_count }}</p>
             </div></div>
         </div>
         <div class="col-6 col-xl-3">
-            <div class="card h-100"><div class="card-body">
+            <div class="card h-100 border-0 bg-body-tertiary"><div class="card-body">
                 <span class="small text-secondary">Registros analizados</span>
                 <p class="h4 fw-bold mb-0">{{ kmeans_run.sample_count }}</p>
             </div></div>
         </div>
         <div class="col-6 col-xl-3">
-            <div class="card h-100"><div class="card-body">
+            <div class="card h-100 border-0 bg-body-tertiary"><div class="card-body">
                 <span class="small text-secondary">Coeficiente de silueta</span>
                 <p class="h4 fw-bold mb-0">{{ kmeans_run.silhouette|floatformat:4|default:"No disponible" }}</p>
                 {% if kmeans_run.silhouette_sample_count < kmeans_run.sample_count %}
@@ -46,18 +51,89 @@
             </div></div>
         </div>
         <div class="col-6 col-xl-3">
-            <div class="card h-100"><div class="card-body">
+            <div class="card h-100 border-0 bg-body-tertiary"><div class="card-body">
                 <span class="small text-secondary">Inercia</span>
                 <p class="h4 fw-bold mb-0">{{ kmeans_run.inertia|floatformat:4 }}</p>
             </div></div>
         </div>
+        </div>
+        <div class="alert alert-{{ kmeans_quality.class }} d-flex flex-column flex-md-row justify-content-between gap-2 mt-3 mb-0" role="status">
+            <div>
+                <strong>Calidad del agrupamiento: {{ kmeans_quality.label }}</strong>
+                <span class="d-block small">{{ kmeans_quality.description }}</span>
+            </div>
+            <span class="small align-self-md-center text-nowrap">
+                Evaluación interna mediante silueta
+            </span>
+        </div>
+    </section>
+
+    <section class="card mb-4" aria-labelledby="kmeansChartHeading">
+        <div class="card-header bg-white">
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="badge rounded-pill text-bg-primary">2</span>
+                <h3 class="h6 fw-bold mb-0" id="kmeansChartHeading">Separación visual de los clusters</h3>
+            </div>
+            <p class="small text-secondary mb-0">
+                {{ kmeans_chart.method }}
+                {% if kmeans_chart.displayed_count < kmeans_chart.total_count %}
+                    Se muestran {{ kmeans_chart.displayed_count }} de {{ kmeans_chart.total_count }} registros para conservar la legibilidad.
+                {% endif %}
+            </p>
+        </div>
+        <div class="card-body">
+            <div class="position-relative mx-auto" style="height: min(26rem, 65vw); min-height: 19rem;">
+                <canvas id="kmeansClusterChart" aria-label="Gráfico de separación de clusters" role="img"></canvas>
+            </div>
+            <p class="small text-secondary text-center mb-0 mt-2">
+                Los círculos representan registros y las cruces representan los centroides calculados por K-Means.
+            </p>
+        </div>
+    </section>
+    {{ kmeans_chart|json_script:"kmeans-chart-data" }}
+
+    <section class="card mb-4" aria-labelledby="kmeansProfilesHeading">
+        <div class="card-header bg-white">
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="badge rounded-pill text-bg-primary">3</span>
+                <h3 class="h6 fw-bold mb-0" id="kmeansProfilesHeading">Qué encontró el algoritmo</h3>
+            </div>
+            <p class="small text-secondary mb-0">
+                La característica principal compara el centroide de cada cluster con el promedio de los registros analizados.
+            </p>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Cluster</th>
+                        <th class="text-end">Registros</th>
+                        <th class="text-end">Porcentaje</th>
+                        <th>Característica principal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for profile in kmeans_cluster_profiles %}
+                        <tr>
+                            <td><span class="badge text-bg-primary">Cluster {{ profile.cluster }}</span></td>
+                            <td class="text-end">{{ profile.size }}</td>
+                            <td class="text-end">{{ profile.percentage|floatformat:2 }}%</td>
+                            <td>{{ profile.characteristic }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </section>
 
     {% if kmeans_run.comparison_column %}
-        <section class="card mb-4">
+        <section class="card mb-4" aria-labelledby="kmeansComparisonHeading">
             <div class="card-header bg-white d-flex flex-column flex-lg-row justify-content-between gap-2">
                 <div>
-                    <h3 class="h6 fw-bold mb-1">Comparación con {{ kmeans_run.comparison_column }}</h3>
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <span class="badge rounded-pill text-bg-primary">4</span>
+                        <h3 class="h6 fw-bold mb-0" id="kmeansComparisonHeading">Comparación con {{ kmeans_run.comparison_column }}</h3>
+                    </div>
                     <p class="small text-secondary mb-0">
                         Categorías encontradas: {{ kmeans_run.comparison_values|join:", " }}
                     </p>
@@ -108,6 +184,18 @@
                 </table>
             </div>
         </section>
+    {% else %}
+        <section class="border rounded-3 bg-body-tertiary p-3 mb-4" aria-label="Comparación externa no configurada">
+            <div class="d-flex align-items-start gap-3">
+                <span class="badge rounded-pill text-bg-secondary">4</span>
+                <div>
+                    <h3 class="h6 fw-bold mb-1">Comparación con una categoría conocida</h3>
+                    <p class="small text-secondary mb-0">
+                        No se seleccionó una columna de comparación para este entrenamiento. Las métricas anteriores siguen siendo válidas como evaluación interna.
+                    </p>
+                </div>
+            </div>
+        </section>
     {% endif %}
 
     <div class="modal fade" id="resetKMeansModal" tabindex="-1" aria-labelledby="resetKMeansModalLabel" aria-hidden="true">
@@ -130,4 +218,42 @@
             </div>
         </div>
     </div>
+{% endif %}
+{% if kmeans_run.parent_run %}
+<div class="alert alert-info border">
+    <h3 class="h6 fw-bold">Reentrenamiento v{{ kmeans_run.version }} de “{{ kmeans_run.parent_run.name|default:"Modelo K-Means" }}”</h3>
+    <div class="row small">
+        <div class="col-md-3">Registros: {{ kmeans_run.change_summary.previous_sample_count }} → {{ kmeans_run.change_summary.current_sample_count }}</div>
+        <div class="col-md-3">Nuevos: {{ kmeans_run.new_record_count }}</div>
+        <div class="col-md-3">Cambios de cluster: {{ kmeans_run.change_summary.changed_cluster_count }} ({{ kmeans_run.change_summary.changed_cluster_percentage|default:"—" }}%)</div>
+        <div class="col-md-3">Silueta: {{ kmeans_run.change_summary.previous_metrics.silhouette|floatformat:4|default:"—" }} → {{ kmeans_run.silhouette|floatformat:4|default:"—" }}</div>
+    </div>
+</div>
+{% endif %}
+{% if kmeans_run %}
+<section class="card border-primary mt-4">
+    <div class="card-body">
+        {% if kmeans_run.is_saved %}
+            <div class="d-flex align-items-center justify-content-between gap-3">
+                <div>
+                    <h3 class="h5 fw-bold mb-1">Modelo guardado</h3>
+                    <p class="text-secondary mb-0">Este resultado ya forma parte del catálogo de modelos.</p>
+                </div>
+                <button class="btn btn-success" type="button" disabled>Modelo guardado</button>
+            </div>
+        {% else %}
+            <h3 class="h5 fw-bold mb-1">Guardar este modelo</h3>
+            <p class="text-secondary">Este resultado es provisional. Si entrenas nuevamente sin guardarlo, será reemplazado.</p>
+            <form method="post" action="{% url 'kmeans:save' kmeans_run.pk %}">
+                {% csrf_token %}
+                <div class="row g-3">
+                    <div class="col-md-6"><label class="form-label" for="saveKmeansName">Nombre</label><input class="form-control" id="saveKmeansName" name="name" maxlength="150" required value="{{ kmeans_run.name }}"></div>
+                    <div class="col-md-6"><label class="form-label" for="saveKmeansTopic">Tema</label><input class="form-control" id="saveKmeansTopic" name="topic" maxlength="150" value="{{ kmeans_run.topic }}"></div>
+                    <div class="col-12"><label class="form-label" for="saveKmeansDescription">Descripción</label><textarea class="form-control" id="saveKmeansDescription" name="description" rows="2">{{ kmeans_run.description }}</textarea></div>
+                    <div class="col-12 text-end"><button class="btn btn-primary px-4" type="submit">Guardar modelo</button></div>
+                </div>
+            </form>
+        {% endif %}
+    </div>
+</section>
 {% endif %}

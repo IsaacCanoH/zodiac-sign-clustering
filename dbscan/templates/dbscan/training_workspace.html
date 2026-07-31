@@ -27,6 +27,16 @@
         {% csrf_token %}
         <input type="hidden" name="algorithm" value="dbscan">
         {% if dbscan_training_category %}<input type="hidden" name="category" value="{{ dbscan_training_category }}">{% endif %}
+        {% if category_column %}<input type="hidden" name="category_column" value="{{ category_column }}">{% endif %}
+
+        <div class="card mb-4">
+            <div class="card-header bg-white"><h3 class="h6 fw-bold mb-0">Metadatos del modelo</h3></div>
+            <div class="card-body row g-3">
+                <div class="col-md-6"><label class="form-label" for="dbscanName">Nombre</label><input class="form-control" id="dbscanName" name="name" maxlength="150" value="{{ dbscan_form.name.value|default:'' }}" placeholder="Ej. Densidad zodiacal"></div>
+                <div class="col-md-6"><label class="form-label" for="dbscanTopic">Tema</label><input class="form-control" id="dbscanTopic" name="topic" maxlength="150" value="{{ dbscan_form.topic.value|default:'' }}" placeholder="Ej. Signos zodiacales"></div>
+                <div class="col-12"><label class="form-label" for="dbscanDescription">Descripción u observaciones</label><textarea class="form-control" id="dbscanDescription" name="description" rows="2">{{ dbscan_form.description.value|default:'' }}</textarea></div>
+            </div>
+        </div>
 
         <div class="row g-4">
             <div class="col-lg-4">
@@ -97,16 +107,15 @@
             </div>
 
             <div class="col-lg-8">
-                <div class="card h-100">
+                <div class="card">
                     <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
                         <div>
                             <h3 class="h6 fw-bold mb-1">Columnas para el entrenamiento</h3>
                             <p class="small text-secondary mb-0">Solo se muestran variables numéricas con valores diferentes.</p>
                         </div>
-                        <div class="btn-group btn-group-sm" role="group" aria-label="Selección de columnas">
-                            <button class="btn btn-outline-secondary" id="selectAllDbscanColumns" type="button">Seleccionar todas</button>
-                            <button class="btn btn-outline-secondary" id="clearDbscanColumns" type="button">Deseleccionar todas</button>
-                        </div>
+                        <button class="btn btn-sm btn-outline-secondary" id="toggleDbscanColumns" type="button">
+                            Seleccionar todas
+                        </button>
                     </div>
                     <div class="card-body overflow-auto" style="max-height: 22rem;">
                         {% if dbscan_numeric_columns %}

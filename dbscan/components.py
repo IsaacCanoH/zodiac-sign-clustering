@@ -3,7 +3,10 @@ from .services import build_dbscan_results_context, build_dbscan_training_setup
 
 
 def build_dbscan_workspace_context(request, dataset):
-    setup = build_dbscan_training_setup(dataset, request.GET.get('category'))
+    setup = build_dbscan_training_setup(
+        dataset, request.GET.get('category'),
+        request.GET.get('category_column'),
+    )
     form_state = request.session.pop('dbscan_form_state', None)
     form = DBSCANTrainingForm(
         data=form_state['data'] if form_state else None,

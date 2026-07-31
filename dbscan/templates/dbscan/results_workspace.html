@@ -12,7 +12,7 @@
             </div>
             <p class="text-secondary mb-0">
                 Generado el {{ dbscan_run.created_at|date:"d/m/Y H:i" }}
-                {% if dbscan_run.category_filter %} · Filtro: {{ dbscan_run.category_label }}{% endif %}
+                {% if dbscan_run.category_filter %} · Filtro: {{ dbscan_run.category_column }} = {{ dbscan_run.category_label }}{% endif %}
             </p>
         </div>
         <div class="d-flex flex-wrap gap-2">
@@ -56,28 +56,44 @@
         </div>
     </section>
 
-    {# DBSCAN hyperparameters used #}
+    <div class="d-flex flex-wrap align-items-center gap-2 border rounded-3 bg-body-tertiary px-3 py-2 mb-4"
+        aria-label="Configuración utilizada por DBSCAN">
+        <span class="small text-secondary me-1">Configuración:</span>
+        <span class="badge text-bg-light border text-body fw-normal">
+            ε {{ dbscan_run.epsilon }}
+        </span>
+        <span class="badge text-bg-light border text-body fw-normal">
+            Mínimo {{ dbscan_run.min_samples }}
+        </span>
+        <span class="badge text-bg-light border text-body fw-normal">
+            {{ dbscan_run.selected_columns|length }}
+            variable{{ dbscan_run.selected_columns|length|pluralize:",s" }}
+        </span>
+    </div>
+
     <section class="card mb-4">
-        <div class="card-header bg-white">
-            <h3 class="h6 fw-bold mb-0">Parámetros utilizados</h3>
-        </div>
-        <div class="card-body">
-            <div class="row g-3">
-                <div class="col-sm-4">
-                    <span class="small text-secondary d-block">Epsilon (ε)</span>
-                    <span class="fw-semibold">{{ dbscan_run.epsilon }}</span>
-                </div>
-                <div class="col-sm-4">
-                    <span class="small text-secondary d-block">Mínimo de muestras</span>
-                    <span class="fw-semibold">{{ dbscan_run.min_samples }}</span>
-                </div>
-                <div class="col-sm-4">
-                    <span class="small text-secondary d-block">Columnas entrenadas</span>
-                    <span class="fw-semibold">{{ dbscan_run.selected_columns|join:", " }}</span>
-                </div>
+        <div class="card-header bg-white d-flex flex-column flex-lg-row justify-content-between gap-2">
+            <div>
+                <h3 class="h6 fw-bold mb-1">Separación encontrada</h3>
+                <p class="small text-secondary mb-0">{{ dbscan_chart.method }}</p>
+            </div>
+            <div class="text-lg-end">
+                <span class="badge text-bg-{{ dbscan_quality.class }}">{{ dbscan_quality.label }}</span>
+                <p class="small text-secondary mb-0 mt-1">{{ dbscan_quality.description }}</p>
             </div>
         </div>
+        <div class="card-body">
+            <div style="height: 24rem;">
+                <canvas id="dbscanClusterChart" aria-label="Gráfico de separación de DBSCAN"></canvas>
+            </div>
+            {% if dbscan_chart.displayed_count < dbscan_chart.total_count %}
+                <p class="small text-secondary text-center mb-0 mt-2">
+                    Se muestran {{ dbscan_chart.displayed_count }} de {{ dbscan_chart.total_count }} registros para conservar la fluidez.
+                </p>
+            {% endif %}
+        </div>
     </section>
+    {{ dbscan_chart|json_script:"dbscan-chart-data" }}
 
     {# Comparison table #}
     {% if dbscan_run.comparison_column %}
@@ -137,82 +153,6 @@
         </section>
     {% endif %}
 
-    {# Assignments table (paginated) #}
-    <section class="card mb-4">
-        <div class="card-header bg-white">
-            <h3 class="h6 fw-bold mb-1">Asignaciones por registro</h3>
-            <p class="small text-secondary mb-0">
-                Cada fila del dataset con el cluster asignado por DBSCAN.
-                Los registros marcados como <strong>Ruido</strong> no pertenecen a ningún cluster.
-            </p>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-sm table-bordered align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Fila</th>
-                        <th>Cluster</th>
-                        {% for column in dbscan_run.selected_columns %}
-                            <th>{{ column }}</th>
-                        {% endfor %}
-                        {% if dbscan_run.comparison_column %}
-                            <th>{{ dbscan_run.comparison_column }}</th>
-                        {% endif %}
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in dbscan_result_rows %}
-                        <tr>
-                            <td class="text-secondary small">{{ row.row_number }}</td>
-                            <td>
-                                {% if row.cluster == -1 %}
-                                    <span class="badge text-bg-secondary">Ruido</span>
-                                {% else %}
-                                    <span class="badge text-bg-primary">Cluster {{ row.cluster }}</span>
-                                {% endif %}
-                            </td>
-                            {% for value in row.values %}
-                                <td>{{ value }}</td>
-                            {% endfor %}
-                            {% if dbscan_run.comparison_column %}
-                                <td>{{ row.comparison_value }}</td>
-                            {% endif %}
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% if dbscan_result_page.has_other_pages %}
-            <div class="card-footer bg-white">
-                <nav aria-label="Páginas de resultados DBSCAN">
-                    <ul class="pagination pagination-sm justify-content-center mb-0">
-                        {% if dbscan_result_page.has_previous %}
-                            <li class="page-item">
-                                <a class="page-link" href="?results_view=dbscan&dbscan_result_page={{ dbscan_result_page.previous_page_number }}#results-pane">‹</a>
-                            </li>
-                        {% endif %}
-                        {% for page_num in dbscan_result_page_range %}
-                            {% if page_num == dbscan_result_page.number %}
-                                <li class="page-item active"><span class="page-link">{{ page_num }}</span></li>
-                            {% elif page_num == '…' %}
-                                <li class="page-item disabled"><span class="page-link">…</span></li>
-                            {% else %}
-                                <li class="page-item">
-                                    <a class="page-link" href="?results_view=dbscan&dbscan_result_page={{ page_num }}#results-pane">{{ page_num }}</a>
-                                </li>
-                            {% endif %}
-                        {% endfor %}
-                        {% if dbscan_result_page.has_next %}
-                            <li class="page-item">
-                                <a class="page-link" href="?results_view=dbscan&dbscan_result_page={{ dbscan_result_page.next_page_number }}#results-pane">›</a>
-                            </li>
-                        {% endif %}
-                    </ul>
-                </nav>
-            </div>
-        {% endif %}
-    </section>
-
     {# Reset modal #}
     <div class="modal fade" id="resetDbscanModal" tabindex="-1" aria-labelledby="resetDbscanModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -234,4 +174,42 @@
             </div>
         </div>
     </div>
+{% endif %}
+{% if dbscan_run.parent_run %}
+<div class="alert alert-info border">
+    <h3 class="h6 fw-bold">Reentrenamiento v{{ dbscan_run.version }} de “{{ dbscan_run.parent_run.name|default:"Modelo DBSCAN" }}”</h3>
+    <div class="row small">
+        <div class="col-md-3">Registros: {{ dbscan_run.change_summary.previous_sample_count }} → {{ dbscan_run.change_summary.current_sample_count }}</div>
+        <div class="col-md-3">Nuevos: {{ dbscan_run.new_record_count }}</div>
+        <div class="col-md-3">Cambios de cluster: {{ dbscan_run.change_summary.changed_cluster_count }} ({{ dbscan_run.change_summary.changed_cluster_percentage|default:"—" }}%)</div>
+        <div class="col-md-3">Ruido: {{ dbscan_run.change_summary.previous_metrics.noise_count }} → {{ dbscan_run.noise_count }}</div>
+    </div>
+</div>
+{% endif %}
+{% if dbscan_run %}
+<section class="card border-primary mt-4">
+    <div class="card-body">
+        {% if dbscan_run.is_saved %}
+            <div class="d-flex align-items-center justify-content-between gap-3">
+                <div>
+                    <h3 class="h5 fw-bold mb-1">Modelo guardado</h3>
+                    <p class="text-secondary mb-0">Este resultado ya forma parte del catálogo de modelos.</p>
+                </div>
+                <button class="btn btn-success" type="button" disabled>Modelo guardado</button>
+            </div>
+        {% else %}
+            <h3 class="h5 fw-bold mb-1">Guardar este modelo</h3>
+            <p class="text-secondary">Este resultado es provisional. Si entrenas nuevamente sin guardarlo, será reemplazado.</p>
+            <form method="post" action="{% url 'dbscan:save' dbscan_run.pk %}">
+                {% csrf_token %}
+                <div class="row g-3">
+                    <div class="col-md-6"><label class="form-label" for="saveDbscanName">Nombre</label><input class="form-control" id="saveDbscanName" name="name" maxlength="150" required value="{{ dbscan_run.name }}"></div>
+                    <div class="col-md-6"><label class="form-label" for="saveDbscanTopic">Tema</label><input class="form-control" id="saveDbscanTopic" name="topic" maxlength="150" value="{{ dbscan_run.topic }}"></div>
+                    <div class="col-12"><label class="form-label" for="saveDbscanDescription">Descripción</label><textarea class="form-control" id="saveDbscanDescription" name="description" rows="2">{{ dbscan_run.description }}</textarea></div>
+                    <div class="col-12 text-end"><button class="btn btn-primary px-4" type="submit">Guardar modelo</button></div>
+                </div>
+            </form>
+        {% endif %}
+    </div>
+</section>
 {% endif %}
