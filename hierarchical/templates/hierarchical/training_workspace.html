@@ -1,0 +1,152 @@
+{% if not dataset %}
+    <div class="border rounded-3 bg-body-tertiary text-center p-5">
+        <h2 class="h6 fw-bold">No hay datos para entrenar</h2>
+        <p class="text-secondary mb-0">Carga un dataset para configurar el algoritmo de Clustering Jerárquico.</p>
+    </div>
+{% else %}
+    {% if training_category %}
+        <div class="alert alert-light border py-2" role="status">
+            El entrenamiento utilizará únicamente los registros de la categoría
+            <strong>{{ training_category_label }}</strong>.
+        </div>
+    {% endif %}
+
+    {% if hierarchical_training_errors %}
+        <div class="alert alert-danger" role="alert">
+            <p class="fw-semibold mb-1">No fue posible iniciar el entrenamiento:</p>
+            <ul class="mb-0">
+                {% for error in hierarchical_training_errors %}<li>{{ error.message }}</li>{% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+
+    <form method="post" action="{% url 'hierarchical:train' %}" id="hierarchicalTrainingForm">
+        {% csrf_token %}
+        <input type="hidden" name="algorithm" value="hierarchical">
+        {% if training_category %}<input type="hidden" name="category" value="{{ training_category }}">{% endif %}
+
+        <div class="row g-4">
+            <!-- PANEL IZQUIERDO: PARÁMETROS -->
+            <div class="col-lg-4">
+                <div class="card h-100">
+                    <div class="card-header bg-white">
+                        <h3 class="h6 fw-bold mb-1">Parámetros del algoritmo</h3>
+                        <p class="small text-secondary mb-0">Configura la jerarquía y distancias.</p>
+                    </div>
+                    <div class="card-body">
+                        
+                        <!-- Cantidad de clusters -->
+                        <label class="form-label fw-semibold" for="hierarchicalClusterCount">Número de clusters (k)</label>
+                        <input type="number" class="form-control" id="hierarchicalClusterCount" name="n_clusters" value="3" min="2" max="15" required>
+                        <p class="small text-secondary mt-1 mb-3">
+                            Define en cuántos grupos fijos se cortará el árbol jerárquico final.
+                        </p>
+
+                        <!-- Método de enlace -->
+                        <label class="form-label fw-semibold" for="hierarchicalLinkage">Método de enlace (Linkage)</label>
+                        <select class="form-select" id="hierarchicalLinkage" name="linkage">
+                            <option value="ward" selected>Ward (Minimiza la varianza)</option>
+                            <option value="complete">Complete (Máxima distancia)</option>
+                            <option value="average">Average (Distancia promedio)</option>
+                            <option value="single">Single (Mínima distancia)</option>
+                        </select>
+                        <p class="small text-secondary mt-1 mb-3">
+                            Criterio matemático para decidir cómo se unen los grupos entre sí.
+                        </p>
+
+                        <!-- Afinidad / Distancia -->
+                        <label class="form-label fw-semibold" for="hierarchicalAffinity">Métrica de distancia</label>
+                        <select class="form-select" id="hierarchicalAffinity" name="affinity">
+                            <option value="euclidean" selected>Euclidiana</option>
+                            <option value="manhattan">Manhattan</option>
+                            <option value="cosine">Coseno</option>
+                        </select>
+                        <p class="small text-secondary mt-1 mb-4">
+                            Forma de medir la cercanía. <strong>Nota:</strong> Ward solo es compatible con Euclidiana.
+                        </p>
+
+                        <hr>
+
+                        <!-- Columna de comparación (Copia exacta de K-Means) -->
+                        <label class="form-label" for="hierarchicalComparisonColumn">
+                            Columna para comparar resultados
+                            <span class="text-secondary fw-normal">(opcional)</span>
+                        </label>
+                        <select class="form-select" id="hierarchicalComparisonColumn" name="comparison_column">
+                            <option value="">Sin comparación</option>
+                            {% for column in categorical_columns %}
+                                <option value="{{ column.name }}">
+                                    {{ column.name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                        <p class="small text-secondary mt-2 mb-0">
+                            Se utiliza únicamente para evaluar la composición de los clusters; no participa en el entrenamiento.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PANEL DERECHO: SELECCIÓN DE COLUMNAS -->
+            <div class="col-lg-8">
+                <div class="card h-100">
+                    <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        <div>
+                            <h3 class="h6 fw-bold mb-1">Columnas para el entrenamiento</h3>
+                            <p class="small text-secondary mb-0">Solo se muestran variables numéricas con valores diferentes.</p>
+                        </div>
+                        <div class="btn-group btn-group-sm" role="group" aria-label="Selección de columnas">
+                            <button class="btn btn-outline-secondary" type="button" onclick="document.querySelectorAll('.hierarchical-column').forEach(cb => cb.checked = true)">Seleccionar todas</button>
+                            <button class="btn btn-outline-secondary" type="button" onclick="document.querySelectorAll('.hierarchical-column').forEach(cb => cb.checked = false)">Deseleccionar todas</button>
+                        </div>
+                    </div>
+                    <div class="card-body overflow-auto" style="max-height: 22rem;">
+                        {% if numeric_columns %}
+                            <div class="row g-2">
+                                {% for column in numeric_columns %}
+                                    <div class="col-md-6">
+                                        <div class="form-check border rounded-2 p-3 ps-5 h-100">
+                                            <input
+                                                class="form-check-input hierarchical-column"
+                                                type="checkbox"
+                                                name="selected_columns"
+                                                value="{{ column.name }}"
+                                                id="hierarchicalColumn{{ forloop.counter }}"
+                                            >
+                                            <label class="form-check-label w-100" for="hierarchicalColumn{{ forloop.counter }}">
+                                                <span class="d-block">{{ column.name }}</span>
+                                                <span class="small text-secondary">
+                                                    {{ column.unique_count }} valores distintos
+                                                    {% if column.null_count %} · {{ column.null_count }} nulos{% endif %}
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="text-center text-secondary py-4">
+                                No se encontraron columnas numéricas compatibles.
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="card-footer bg-white d-flex justify-content-between">
+                        <span class="small text-secondary">Selecciona las variables que definirán el agrupamiento</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="alert alert-light border mt-4 mb-3">
+            Las variables se estandarizan antes del entrenamiento para evitar que una escala domine a las demás.
+            Los valores numéricos faltantes se sustituyen por la mediana de su columna.
+        </div>
+
+        <div class="d-flex justify-content-end">
+            <!-- El botón apuntará al backend y procesará los checkboxes "selected_columns" -->
+            <button class="btn btn-primary px-4" type="submit">
+                Entrenar Clustering Jerárquico
+            </button>
+        </div>
+    </form>
+{% endif %}

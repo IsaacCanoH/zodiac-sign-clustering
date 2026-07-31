@@ -23,5 +23,6 @@ urlpatterns = [
     path('estadistica/', include('descriptive_statistics.urls')),
     path('kmeans/', include('kmeans.urls')),
     path('dbscan/', include('dbscan.urls')),
+    path('hierarchical/', include('hierarchical.urls')),
     path('admin/', admin.site.urls),
 ]

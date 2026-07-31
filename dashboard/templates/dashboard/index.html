@@ -1,12 +1,14 @@
 {% load static %}
 <!doctype html>
 <html lang="es">
+
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Panel de Análisis de Datos</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
+
 <body class="bg-body-tertiary">
     <nav class="navbar navbar-expand-lg bg-dark navbar-dark shadow-sm">
         <div class="container-xl py-2">
@@ -17,20 +19,22 @@
 
     <main class="container-xl py-4 py-lg-5">
         {% for message in messages %}
-            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
-            </div>
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+        </div>
         {% endfor %}
 
         <header class="row align-items-center g-3 mb-4">
             <div class="col-lg-8">
                 <p class="text-uppercase text-primary fw-semibold small mb-2">Espacio de trabajo</p>
                 <h1 class="h2 fw-bold mb-2">Dashboard de procesamiento</h1>
-                <p class="text-secondary mb-0">Administra los datos, el entrenamiento y los resultados desde un solo lugar.</p>
+                <p class="text-secondary mb-0">Administra los datos, el entrenamiento y los resultados desde un solo
+                    lugar.</p>
             </div>
             <div class="col-lg-4 text-lg-end">
-                <button class="btn btn-primary px-4" type="button" data-bs-toggle="modal" data-bs-target="#loadDataModal">
+                <button class="btn btn-primary px-4" type="button" data-bs-toggle="modal"
+                    data-bs-target="#loadDataModal">
                     Cargar conjunto de datos
                 </button>
             </div>
@@ -43,9 +47,9 @@
                         <p class="text-secondary small mb-2">Registros cargados</p>
                         <p class="h3 fw-bold mb-1">{{ dataset.row_count|default:0 }}</p>
                         {% if dataset %}
-                            <span class="badge text-bg-success">Disponible</span>
+                        <span class="badge text-bg-success">Disponible</span>
                         {% else %}
-                            <span class="badge text-bg-secondary">Sin datos</span>
+                        <span class="badge text-bg-secondary">Sin datos</span>
                         {% endif %}
                     </div>
                 </div>
@@ -55,7 +59,8 @@
                     <div class="card-body">
                         <p class="text-secondary small mb-2">Variables detectadas</p>
                         <p class="h3 fw-bold mb-1">{{ dataset.column_count|default:0 }}</p>
-                        <span class="text-secondary small">{% if dataset %}Columnas identificadas{% else %}Pendiente de carga{% endif %}</span>
+                        <span class="text-secondary small">{% if dataset %}Columnas identificadas{% else %}Pendiente de
+                            carga{% endif %}</span>
                     </div>
                 </div>
             </div>
@@ -64,11 +69,11 @@
                     <div class="card-body">
                         <p class="text-secondary small mb-2">Estado del modelo</p>
                         {% if kmeans_run or dbscan_run %}
-                            <p class="h5 fw-bold mb-2">Entrenado</p>
-                            <span class="badge text-bg-success">Disponible</span>
+                        <p class="h5 fw-bold mb-2">Entrenado</p>
+                        <span class="badge text-bg-success">Disponible</span>
                         {% else %}
-                            <p class="h5 fw-bold mb-2">No entrenado</p>
-                            <span class="badge text-bg-warning">Pendiente</span>
+                        <p class="h5 fw-bold mb-2">No entrenado</p>
+                        <span class="badge text-bg-warning">Pendiente</span>
                         {% endif %}
                     </div>
                 </div>
@@ -79,9 +84,9 @@
                         <p class="text-secondary small mb-2">Modelos guardados</p>
                         <p class="h3 fw-bold mb-1">
                             {% if dataset %}
-                                {{ dataset.kmeans_runs.count|add:dataset.dbscan_runs.count }}
+                            {{ dataset.kmeans_runs.count|add:dataset.dbscan_runs.count }}
                             {% else %}
-                                0
+                            0
                             {% endif %}
                         </p>
                         <span class="text-secondary small">Disponibles para consulta</span>
@@ -94,19 +99,29 @@
             <div class="card-header bg-white border-bottom p-0">
                 <ul class="nav nav-tabs nav-fill border-0" id="dashboardTabs" role="tablist">
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link active py-3" id="data-tab" data-bs-toggle="tab" data-bs-target="#data-pane" type="button" role="tab" aria-controls="data-pane" aria-selected="true">Datos cargados</button>
+                        <button class="nav-link active py-3" id="data-tab" data-bs-toggle="tab"
+                            data-bs-target="#data-pane" type="button" role="tab" aria-controls="data-pane"
+                            aria-selected="true">Datos cargados</button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link py-3" id="statistics-tab" data-bs-toggle="tab" data-bs-target="#statistics-pane" type="button" role="tab" aria-controls="statistics-pane" aria-selected="false">Estadística descriptiva</button>
+                        <button class="nav-link py-3" id="statistics-tab" data-bs-toggle="tab"
+                            data-bs-target="#statistics-pane" type="button" role="tab" aria-controls="statistics-pane"
+                            aria-selected="false">Estadística descriptiva</button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link py-3" id="training-tab" data-bs-toggle="tab" data-bs-target="#training-pane" type="button" role="tab" aria-controls="training-pane" aria-selected="false">Entrenamiento</button>
+                        <button class="nav-link py-3" id="training-tab" data-bs-toggle="tab"
+                            data-bs-target="#training-pane" type="button" role="tab" aria-controls="training-pane"
+                            aria-selected="false">Entrenamiento</button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link py-3" id="results-tab" data-bs-toggle="tab" data-bs-target="#results-pane" type="button" role="tab" aria-controls="results-pane" aria-selected="false">Resultados</button>
+                        <button class="nav-link py-3" id="results-tab" data-bs-toggle="tab"
+                            data-bs-target="#results-pane" type="button" role="tab" aria-controls="results-pane"
+                            aria-selected="false">Resultados</button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link py-3" id="models-tab" data-bs-toggle="tab" data-bs-target="#models-pane" type="button" role="tab" aria-controls="models-pane" aria-selected="false">Modelos guardados</button>
+                        <button class="nav-link py-3" id="models-tab" data-bs-toggle="tab" data-bs-target="#models-pane"
+                            type="button" role="tab" aria-controls="models-pane" aria-selected="false">Modelos
+                            guardados</button>
                     </li>
                 </ul>
             </div>
@@ -122,97 +137,144 @@
                     </div>
 
                     {# ── Training pane: algorithm selector + dynamic form ── #}
-                    <div class="tab-pane fade" id="training-pane" role="tabpanel" aria-labelledby="training-tab" tabindex="0">
+                    <div class="tab-pane fade" id="training-pane" role="tabpanel" aria-labelledby="training-tab"
+                        tabindex="0">
                         {% if not dataset %}
-                            <div class="border rounded-3 bg-body-tertiary text-center p-5">
-                                <h2 class="h6 fw-bold">No hay datos para entrenar</h2>
-                                <p class="text-secondary mb-0">Carga un dataset para configurar el algoritmo de clustering.</p>
-                            </div>
+                        <div class="border rounded-3 bg-body-tertiary text-center p-5">
+                            <h2 class="h6 fw-bold">No hay datos para entrenar</h2>
+                            <p class="text-secondary mb-0">Carga un dataset para configurar el algoritmo de clustering.
+                            </p>
+                        </div>
                         {% else %}
-                            {# Algorithm selector header #}
-                            <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
-                                <div>
-                                    <h2 class="h5 fw-bold mb-1">Entrenamiento del algoritmo</h2>
-                                    <p class="text-secondary mb-0">Configura las variables y parámetros que participarán en el análisis.</p>
-                                </div>
-                                <div class="dropdown">
-                                    <button class="btn btn-outline-secondary dropdown-toggle" type="button"
-                                        id="algorithmDropdownBtn"
-                                        data-bs-toggle="dropdown" aria-expanded="false">
-                                        Algoritmo: <span id="algorithmLabel">K-Means</span>
-                                    </button>
-                                    <ul class="dropdown-menu dropdown-menu-end" id="algorithmDropdownMenu">
-                                        <li>
-                                            <button class="dropdown-item" type="button"
-                                                id="selectKmeans" data-algorithm="kmeans">
-                                                K-Means
-                                            </button>
-                                        </li>
-                                        <li>
-                                            <button class="dropdown-item" type="button"
-                                                id="selectDbscan" data-algorithm="dbscan">
-                                                DBSCAN
-                                            </button>
-                                        </li>
-                                    </ul>
-                                </div>
+                        {# Algorithm selector header #}
+                        <div
+                            class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
+                            <div>
+                                <h2 class="h5 fw-bold mb-1">Entrenamiento del algoritmo</h2>
+                                <p class="text-secondary mb-0">Configura las variables y parámetros que participarán en
+                                    el análisis.</p>
                             </div>
+                            <div class="dropdown">
+                                <button class="btn btn-outline-secondary dropdown-toggle" type="button"
+                                    id="algorithmDropdownBtn" data-bs-toggle="dropdown" aria-expanded="false">
+                                    Algoritmo: <span id="algorithmLabel">K-Means</span>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end" id="algorithmDropdownMenu">
+                                    <li>
+                                        <button class="dropdown-item" type="button" id="selectKmeans"
+                                            data-algorithm="kmeans">
+                                            K-Means
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <button class="dropdown-item" type="button" id="selectDbscan"
+                                            data-algorithm="dbscan">
+                                            DBSCAN
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <button class="dropdown-item" type="button" id="selectHierarchical"
+                                            data-algorithm="hierarchical">
+                                            Clustering Jerárquico
+                                        </button>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
 
-                            {# K-Means form panel #}
-                            <div id="kmeans-form-panel">
-                                {% include 'kmeans/training_workspace.html' %}
-                            </div>
+                        {# K-Means form panel #}
+                        <div id="kmeans-form-panel">
+                            {% include 'kmeans/training_workspace.html' %}
+                        </div>
 
-                            {# DBSCAN form panel #}
-                            <div id="dbscan-form-panel" style="display:none;">
-                                {% include 'dbscan/training_workspace.html' %}
-                            </div>
+                        {# DBSCAN form panel #}
+                        <div id="dbscan-form-panel" style="display:none;">
+                            {% include 'dbscan/training_workspace.html' %}
+                        </div>
+
+                        {# Hierarchical form panel #}
+                        <div id="hierarchical-form-panel" style="display:none;">
+                            {% include 'hierarchical/training_workspace.html' %}
+                        </div>
                         {% endif %}
                     </div>
 
                     {# ── Results pane: show latest run (either algorithm) ── #}
                     <div class="tab-pane fade" id="results-pane" role="tabpanel" aria-labelledby="results-tab">
-                        {% if not kmeans_run and not dbscan_run %}
-                            <div class="border rounded-3 bg-body-tertiary text-center p-5">
-                                <h2 class="h6 fw-bold">No existen resultados de entrenamiento</h2>
-                                <p class="text-secondary mb-0">Configura y ejecuta un algoritmo desde la pestaña de Entrenamiento.</p>
-                            </div>
-                        {% elif dbscan_run and not kmeans_run %}
-                            {% include 'dbscan/results_workspace.html' %}
-                        {% elif kmeans_run and not dbscan_run %}
-                            {% include 'kmeans/results_workspace.html' %}
+                        {% if not kmeans_run and not dbscan_run and not hierarchical_run %}
+                        <div class="border rounded-3 bg-body-tertiary text-center p-5">
+                            <h2 class="h6 fw-bold">No existen resultados de entrenamiento</h2>
+                            <p class="text-secondary mb-0">Configura y ejecuta un algoritmo desde la pestaña de
+                                Entrenamiento.</p>
+                        </div>
                         {% else %}
-                            {# Both exist — show tabs to pick which to view #}
-                            <div class="mb-4">
-                                <ul class="nav nav-pills" id="resultsTabs" role="tablist">
-                                    <li class="nav-item" role="presentation">
-                                        <button class="nav-link active" id="kmeans-results-tab"
-                                            data-bs-toggle="pill" data-bs-target="#kmeans-results-panel"
-                                            type="button" role="tab">
-                                            Resultados K-Means
-                                        </button>
-                                    </li>
-                                    <li class="nav-item" role="presentation">
-                                        <button class="nav-link" id="dbscan-results-tab"
-                                            data-bs-toggle="pill" data-bs-target="#dbscan-results-panel"
-                                            type="button" role="tab">
-                                            Resultados DBSCAN
-                                        </button>
-                                    </li>
-                                </ul>
+                        <!-- Si el único modelo activo o existente es el Jerárquico -->
+                        {% if hierarchical_run and not kmeans_run and not dbscan_run %}
+                        {% include 'hierarchical/results_workspace.html' with run=hierarchical_run %}
+                        {% elif dbscan_run and not kmeans_run and not hierarchical_run %}
+                        {% include 'dbscan/results_workspace.html' %}
+                        {% elif kmeans_run and not dbscan_run and not hierarchical_run %}
+                        {% include 'kmeans/results_workspace.html' %}
+                        {% else %}
+                        {# Si hay múltiples algoritmos, mostramos navegación interna en pestañas #}
+                        <div class="mb-4">
+                            <ul class="nav nav-pills" id="resultsTabs" role="tablist">
+                                {% if kmeans_run %}
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link {% if ui_active_algorithm == 'kmeans' %}active{% endif %}"
+                                        id="kmeans-results-tab" data-bs-toggle="pill"
+                                        data-bs-target="#kmeans-results-panel" type="button" role="tab">
+                                        Resultados K-Means
+                                    </button>
+                                </li>
+                                {% endif %}
+                                {% if dbscan_run %}
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link {% if ui_active_algorithm == 'dbscan' %}active{% endif %}"
+                                        id="dbscan-results-tab" data-bs-toggle="pill"
+                                        data-bs-target="#dbscan-results-panel" type="button" role="tab">
+                                        Resultados DBSCAN
+                                    </button>
+                                </li>
+                                {% endif %}
+                                {% if hierarchical_run %}
+                                <li class="nav-item" role="presentation">
+                                    <button
+                                        class="nav-link {% if ui_active_algorithm == 'hierarchical' %}active{% endif %}"
+                                        id="hierarchical-results-tab" data-bs-toggle="pill"
+                                        data-bs-target="#hierarchical-results-panel" type="button" role="tab">
+                                        Resultados Jerárquico
+                                    </button>
+                                </li>
+                                {% endif %}
+                            </ul>
+                        </div>
+                        <div class="tab-content">
+                            {% if kmeans_run %}
+                            <div class="tab-pane fade {% if ui_active_algorithm == 'kmeans' %}show active{% endif %}"
+                                id="kmeans-results-panel" role="tabpanel">
+                                {% include 'kmeans/results_workspace.html' %}
                             </div>
-                            <div class="tab-content">
-                                <div class="tab-pane fade show active" id="kmeans-results-panel" role="tabpanel">
-                                    {% include 'kmeans/results_workspace.html' %}
-                                </div>
-                                <div class="tab-pane fade" id="dbscan-results-panel" role="tabpanel">
-                                    {% include 'dbscan/results_workspace.html' %}
-                                </div>
+                            {% endif %}
+                            {% if dbscan_run %}
+                            <div class="tab-pane fade {% if ui_active_algorithm == 'dbscan' %}show active{% endif %}"
+                                id="dbscan-results-panel" role="tabpanel">
+                                {% include 'dbscan/results_workspace.html' %}
                             </div>
+                            {% endif %}
+                            {% if hierarchical_run %}
+                            <div class="tab-pane fade {% if ui_active_algorithm == 'hierarchical' %}show active{% endif %}"
+                                id="hierarchical-results-panel" role="tabpanel">
+                                {% include 'hierarchical/results_workspace.html' with run=hierarchical_run %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endif %}
                         {% endif %}
                     </div>
 
-                    <div class="tab-pane fade" id="models-pane" role="tabpanel" aria-labelledby="models-tab" tabindex="0">
+                    <div class="tab-pane fade" id="models-pane" role="tabpanel" aria-labelledby="models-tab"
+                        tabindex="0">
                         {% include 'dashboard/models_pane.html' %}
                     </div>
                 </div>
@@ -240,9 +302,66 @@
     </script>
 
     {% if open_upload_modal %}
-        <script>
-            bootstrap.Modal.getOrCreateInstance(document.getElementById('loadDataModal')).show();
-        </script>
+    <script>
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('loadDataModal')).show();
+    </script>
     {% endif %}
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            let hash = window.location.hash;
+            if (hash) {
+                let tabTrigger = document.querySelector('button[data-bs-target="' + hash + '"]');
+                if (tabTrigger) {
+                    let tabInstance = new bootstrap.Tab(tabTrigger);
+                    tabInstance.show();
+                }
+            }
+
+            const selectKmeans = document.getElementById("selectKmeans");
+            const selectDbscan = document.getElementById("selectDbscan");
+            const selectHierarchical = document.getElementById("selectHierarchical"); 
+
+            const kmeansPanel = document.getElementById("kmeans-form-panel");
+            const dbscanPanel = document.getElementById("dbscan-form-panel");
+            const hierarchicalPanel = document.getElementById("hierarchical-form-panel"); 
+
+            const algorithmLabel = document.getElementById("algorithmLabel");
+
+            function switchAlgorithm(algorithmName) {
+                if (kmeansPanel) kmeansPanel.style.display = 'none';
+                if (dbscanPanel) dbscanPanel.style.display = 'none';
+                if (hierarchicalPanel) hierarchicalPanel.style.display = 'none';
+
+                document.querySelectorAll('#algorithmDropdownMenu .dropdown-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+
+                if (algorithmName === 'kmeans' && kmeansPanel) {
+                    kmeansPanel.style.display = 'block';
+                    algorithmLabel.textContent = 'K-Means';
+                    if (selectKmeans) selectKmeans.classList.add('active');
+                } else if (algorithmName === 'dbscan' && dbscanPanel) {
+                    dbscanPanel.style.display = 'block';
+                    algorithmLabel.textContent = 'DBSCAN';
+                    if (selectDbscan) selectDbscan.classList.add('active');
+                } else if (algorithmName === 'hierarchical' && hierarchicalPanel) {
+                    hierarchicalPanel.style.display = 'block';
+                    algorithmLabel.textContent = 'Clustering Jerárquico';
+                    if (selectHierarchical) selectHierarchical.classList.add('active');
+                }
+            }
+
+            if (window.__activeAlgorithm) {
+                switchAlgorithm(window.__activeAlgorithm);
+            } else {
+                switchAlgorithm('kmeans');
+            }
+
+            if (selectKmeans) selectKmeans.addEventListener("click", () => switchAlgorithm('kmeans'));
+            if (selectDbscan) selectDbscan.addEventListener("click", () => switchAlgorithm('dbscan'));
+            if (selectHierarchical) selectHierarchical.addEventListener("click", () => switchAlgorithm('hierarchical'));
+        });
+    </script>
 </body>
+
 </html>
