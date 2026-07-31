@@ -44,11 +44,25 @@ def export_dbscan_run(run):
         'overall_match_percentage': run.overall_match_percentage,
         'category_filter': run.category_filter,
         'category_label': run.category_label,
+        'category_column': run.category_column,
+        'schema_profile': run.schema_profile,
         'exported_at': timezone.now().isoformat(),
+        'name': run.name,
+        'topic': run.topic,
+        'description': run.description,
+        'model_version': run.version,
+        'source_row_count': run.source_row_count,
+        'new_record_count': run.new_record_count,
+        'dataset_schema_fingerprint': run.dataset_schema_fingerprint,
+        'training_config_fingerprint': run.training_config_fingerprint,
+        'preprocessing_state': run.preprocessing_state,
+        'estimator_state': run.estimator_state,
+        'library_versions': run.library_versions,
+        'change_summary': run.change_summary,
     }
 
 
-def import_dbscan_run(dataset, data):
+def import_dbscan_run(dataset, data, *, allow_compatible=False):
     """Validate and restore a DBSCAN run for the exact source dataset."""
     require_mapping(data)
     if data.get('type') != MODEL_TYPE:
@@ -59,7 +73,9 @@ def import_dbscan_run(dataset, data):
             'desde la versión actual de la aplicación.'
         )
 
-    validate_dataset_identity(dataset, data)
+    exact_dataset = validate_dataset_identity(
+        dataset, data, allow_compatible=allow_compatible
+    )
     selected_columns = validate_selected_columns(dataset, data.get('selected_columns'))
     sample_count = require_integer(data.get('sample_count'), 'sample_count', 2)
     cluster_count = require_integer(data.get('cluster_count'), 'cluster_count', 1)
@@ -97,7 +113,10 @@ def import_dbscan_run(dataset, data):
     with transaction.atomic():
         return DBSCANRun.objects.create(
             dataset=dataset,
-            dataset_fingerprint=dataset_fingerprint(dataset),
+            dataset_fingerprint=(
+                dataset_fingerprint(dataset)
+                if exact_dataset else data['dataset_fingerprint']
+            ),
             dataset_source_name=dataset.source_name,
             cluster_count=cluster_count,
             noise_count=noise_count,
@@ -117,4 +136,41 @@ def import_dbscan_run(dataset, data):
             overall_match_percentage=data.get('overall_match_percentage'),
             category_filter=data.get('category_filter', ''),
             category_label=data.get('category_label', ''),
+            category_column=data.get('category_column', ''),
+            schema_profile=data.get('schema_profile', {}),
+            name=str(data.get('name', ''))[:150],
+            topic=str(data.get('topic', ''))[:150],
+            description=str(data.get('description', '')),
+            version=require_integer(data.get('model_version', 1), 'model_version', 1),
+            source_row_count=require_integer(
+                data.get('source_row_count', len(dataset.records)),
+                'source_row_count',
+            ),
+            new_record_count=require_integer(
+                data.get('new_record_count', 0), 'new_record_count'
+            ),
+            dataset_schema_fingerprint=str(
+                data.get('dataset_schema_fingerprint', '')
+            )[:64],
+            training_config_fingerprint=str(
+                data.get('training_config_fingerprint', '')
+            )[:64],
+            preprocessing_state=require_mapping(
+                data.get('preprocessing_state', {}),
+                'El estado de preprocesamiento debe ser un objeto.',
+            ),
+            estimator_state=require_mapping(
+                data.get('estimator_state', {}),
+                'El estado del estimador debe ser un objeto.',
+            ),
+            library_versions=require_mapping(
+                data.get('library_versions', {}),
+                'Las versiones deben ser un objeto.',
+            ),
+            change_summary=require_mapping(
+                data.get('change_summary', {}),
+                'El resumen de cambios debe ser un objeto.',
+            ),
+            is_saved=True,
+            saved_at=timezone.now(),
         )

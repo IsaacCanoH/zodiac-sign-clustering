@@ -7,6 +7,7 @@ def build_workspace_context(request):
     context = build_dataset_context(
         page_number=request.GET.get('page'),
         requested_category=request.GET.get('category'),
+        requested_category_column=request.GET.get('category_column'),
         requested_representation=request.GET.get('representation', 'original'),
     )
     context['equivalence_data'] = build_equivalence_context(context.get('dataset'))

@@ -150,7 +150,8 @@ class FilteredDatasetDownloadView(View):
             raise Http404('No hay un dataset disponible.')
 
         category_filter = filter_dataset_by_category(
-            dataset, request.GET.get('category')
+            dataset, request.GET.get('category'),
+            request.GET.get('category_column'),
         )
         selected_category = category_filter['selected_category']
         if not selected_category:

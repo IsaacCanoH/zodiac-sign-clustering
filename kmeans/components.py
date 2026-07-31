@@ -3,7 +3,10 @@ from .services import build_results_context, build_training_setup
 
 
 def build_kmeans_workspace_context(request, dataset):
-    setup = build_training_setup(dataset, request.GET.get('category'))
+    setup = build_training_setup(
+        dataset, request.GET.get('category'),
+        request.GET.get('category_column'),
+    )
     form_state = request.session.pop('kmeans_form_state', None)
     form = KMeansTrainingForm(
         data=form_state['data'] if form_state else None,

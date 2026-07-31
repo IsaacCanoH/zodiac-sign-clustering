@@ -5,14 +5,22 @@ from collections import Counter
 from decimal import Decimal
 
 import numpy as np
+import sklearn
 from django.core.paginator import Paginator
+from django.utils import timezone
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
 from datasets.equivalences import canonical_number
-from datasets.model_validation import dataset_fingerprint
+from datasets.model_validation import (
+    build_change_summary,
+    build_schema_profile,
+    dataset_fingerprint,
+    dataset_schema_fingerprint,
+    training_config_fingerprint,
+)
 from datasets.services import filter_dataset_by_category
 
 from .models import KMeansRun
@@ -132,8 +140,10 @@ def detect_categorical_columns(dataset, records):
     return columns
 
 
-def _filtered_rows(dataset, requested_category):
-    category_filter = filter_dataset_by_category(dataset, requested_category)
+def _filtered_rows(dataset, requested_category, requested_category_column=None):
+    category_filter = filter_dataset_by_category(
+        dataset, requested_category, requested_category_column
+    )
     selected_category = category_filter['selected_category']
     category_column = category_filter['category_column']
 
@@ -147,7 +157,9 @@ def _filtered_rows(dataset, requested_category):
     return category_filter, rows
 
 
-def build_training_setup(dataset, requested_category=None):
+def build_training_setup(
+    dataset, requested_category=None, requested_category_column=None
+):
     if not dataset:
         return {
             'numeric_columns': [],
@@ -157,7 +169,9 @@ def build_training_setup(dataset, requested_category=None):
             'can_train': False,
         }
 
-    category_filter, rows = _filtered_rows(dataset, requested_category)
+    category_filter, rows = _filtered_rows(
+        dataset, requested_category, requested_category_column
+    )
     records = [record for _, record in rows]
     numeric_columns = detect_numeric_columns(dataset, records)
     categorical_columns = detect_categorical_columns(dataset, records)
@@ -171,6 +185,7 @@ def build_training_setup(dataset, requested_category=None):
         'can_train': bool(numeric_columns) and max_clusters >= MIN_CLUSTERS,
         'training_category': category_filter['selected_category'],
         'training_category_label': category_filter['selected_category_label'],
+        'category_column': category_filter['category_column'],
     }
 
 
@@ -295,8 +310,16 @@ def train_kmeans(
     cluster_count,
     requested_category=None,
     comparison_column='',
+    requested_category_column=None,
+    name='',
+    topic='',
+    description='',
+    parent_run=None,
+    save_immediately=True,
 ):
-    category_filter, rows = _filtered_rows(dataset, requested_category)
+    category_filter, rows = _filtered_rows(
+        dataset, requested_category, requested_category_column
+    )
     records = [record for _, record in rows]
     allowed_columns = {
         column['name'] for column in detect_numeric_columns(dataset, records)
@@ -337,13 +360,27 @@ def train_kmeans(
 
     scaler = StandardScaler()
     scaled_matrix = scaler.fit_transform(matrix)
+    estimator_options = {
+        'n_clusters': cluster_count,
+        'n_init': 10,
+        'max_iter': 300,
+        'random_state': RANDOM_STATE,
+        'algorithm': 'lloyd',
+    }
+    if parent_run is not None:
+        if parent_run.cluster_count != cluster_count:
+            raise KMeansTrainingError(
+                'El número de clusters no coincide con el modelo original.'
+            )
+        initial_original = np.asarray(
+            [item['values'] for item in parent_run.centroids], dtype=float
+        )
+        estimator_options['init'] = scaler.transform(initial_original)
+        estimator_options['n_init'] = 1
+    else:
+        estimator_options['init'] = 'k-means++'
     estimator = KMeans(
-        n_clusters=cluster_count,
-        init='k-means++',
-        n_init=10,
-        max_iter=300,
-        random_state=RANDOM_STATE,
-        algorithm='lloyd',
+        **estimator_options,
     )
     labels = estimator.fit_predict(scaled_matrix)
     original_centers = scaler.inverse_transform(estimator.cluster_centers_)
@@ -396,6 +433,26 @@ def train_kmeans(
         }
     )
 
+    change_summary = {}
+    if parent_run:
+        change_summary = build_change_summary(
+            parent_run, assignments, len(rows),
+            {
+                'previous': {
+                    'silhouette': parent_run.silhouette,
+                    'inertia': parent_run.inertia,
+                },
+                'current': {'silhouette': score, 'inertia': float(estimator.inertia_)},
+            },
+        )
+        shifts = []
+        for old, new in zip(parent_run.centroids, centroids, strict=True):
+            shifts.append(round(float(np.linalg.norm(
+                np.asarray(old['values']) - np.asarray(new['values'])
+            )), 6))
+        change_summary['centroid_shifts'] = shifts
+
+    dataset.kmeans_runs.filter(is_saved=False).delete()
     return KMeansRun.objects.create(
         dataset=dataset,
         dataset_fingerprint=dataset_fingerprint(dataset),
@@ -417,13 +474,51 @@ def train_kmeans(
         overall_match_percentage=comparison['overall_match_percentage'],
         category_filter=category_filter['selected_category'],
         category_label=category_filter['selected_category_label'],
+        category_column=category_filter['category_column'] or '',
+        name=(name or (parent_run.name if parent_run else '') or 'Modelo K-Means'),
+        topic=topic or (parent_run.topic if parent_run else ''),
+        description=description or (parent_run.description if parent_run else ''),
+        parent_run=parent_run,
+        version=(parent_run.version + 1 if parent_run else 1),
+        source_row_count=len(dataset.records),
+        new_record_count=change_summary.get('new_record_count', 0),
+        dataset_schema_fingerprint=dataset_schema_fingerprint(dataset),
+        training_config_fingerprint=training_config_fingerprint(
+            'kmeans', selected_columns,
+            category_filter=category_filter['selected_category'],
+            comparison_column=comparison_column,
+            cluster_count=cluster_count,
+            category_column=category_filter['category_column'] or '',
+        ),
+        schema_profile=build_schema_profile(dataset),
+        preprocessing_state={
+            'mean': scaler.mean_.tolist(),
+            'scale': scaler.scale_.tolist(),
+            'variance': scaler.var_.tolist(),
+            'imputed_values': imputed_values,
+        },
+        estimator_state={
+            'normalized_centroids': estimator.cluster_centers_.tolist(),
+            'iterations': int(estimator.n_iter_),
+            'parameters': {
+                'cluster_count': cluster_count, 'init': (
+                    'previous_centroids' if parent_run else 'k-means++'
+                ), 'n_init': estimator_options['n_init'],
+                'max_iter': 300, 'random_state': RANDOM_STATE,
+            },
+        },
+        library_versions={'scikit_learn': sklearn.__version__, 'numpy': np.__version__},
+        change_summary=change_summary,
+        is_saved=save_immediately,
+        saved_at=(timezone.now() if save_immediately else None),
     )
 
 
 def clear_kmeans_runs(dataset):
-    """Remove every K-Means result associated with the active dataset."""
+    """Discard provisional K-Means results while preserving saved models."""
     dataset.kmeans_runs.filter(
-        dataset_fingerprint=dataset_fingerprint(dataset)
+        dataset_fingerprint=dataset_fingerprint(dataset),
+        is_saved=False,
     ).delete()
 
 

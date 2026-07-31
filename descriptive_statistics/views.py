@@ -23,7 +23,8 @@ class StatisticsPdfDownloadView(View):
             raise Http404('Selecciona una columna válida para generar el reporte.')
 
         category_filter = filter_dataset_by_category(
-            dataset, request.GET.get('category')
+            dataset, request.GET.get('category'),
+            request.GET.get('category_column'),
         )
         category_label = category_filter['selected_category_label']
         source_name = slugify(Path(dataset.source_name).stem) or 'dataset'

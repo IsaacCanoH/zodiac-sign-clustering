@@ -33,10 +33,33 @@ def _normalize_category(value):
     return str(value).strip().casefold()
 
 
-def _find_category_column(columns):
-    return next(
-        (column for column in columns if column.strip().casefold() == CATEGORY_COLUMN),
-        None,
+def _category_columns(dataset):
+    """Return low-cardinality columns suitable for a user-selected filter."""
+    candidates = []
+    record_count = max(len(dataset.records), 1)
+    for column in dataset.columns:
+        values = {
+            _normalize_category(record.get(column, ''))
+            for record in dataset.records
+        }
+        values.discard('')
+        unique_count = len(values)
+        is_legacy_category = column.strip().casefold() == CATEGORY_COLUMN
+        if unique_count <= 50 and (
+            (unique_count >= 2 and unique_count < record_count)
+            or (is_legacy_category and unique_count >= 1)
+        ):
+            candidates.append({
+                'name': column,
+                'unique_count': unique_count,
+                'label': column,
+            })
+    return sorted(
+        candidates,
+        key=lambda item: (
+            item['name'].strip().casefold() != CATEGORY_COLUMN,
+            item['name'].casefold(),
+        ),
     )
 
 
@@ -51,9 +74,23 @@ def _build_category_options(records, category_column):
     ]
 
 
-def filter_dataset_by_category(dataset, requested_category=None):
+def filter_dataset_by_category(
+    dataset, requested_category=None, requested_category_column=None
+):
     """Return category metadata and records matching a valid category."""
-    category_column = _find_category_column(dataset.columns)
+    category_columns = _category_columns(dataset)
+    allowed_columns = {item['name'] for item in category_columns}
+    category_column = (
+        requested_category_column
+        if requested_category_column in allowed_columns
+        else next(
+            (
+                item['name'] for item in category_columns
+                if item['name'].strip().casefold() == CATEGORY_COLUMN
+            ),
+            category_columns[0]['name'] if category_columns else None,
+        )
+    )
     category_options = (
         _build_category_options(dataset.records, category_column)
         if category_column
@@ -76,6 +113,7 @@ def filter_dataset_by_category(dataset, requested_category=None):
 
     return {
         'category_column': category_column,
+        'category_columns': category_columns,
         'category_options': category_options,
         'selected_category': selected_category,
         'selected_category_label': selected_category.capitalize(),
@@ -86,6 +124,7 @@ def filter_dataset_by_category(dataset, requested_category=None):
 def build_dataset_context(
     page_number,
     requested_category=None,
+    requested_category_column=None,
     requested_representation='original',
 ):
     """Build the table component context without leaking pagination to dashboard."""
@@ -98,7 +137,9 @@ def build_dataset_context(
             'category_options': [],
         }
 
-    category_filter = filter_dataset_by_category(dataset, requested_category)
+    category_filter = filter_dataset_by_category(
+        dataset, requested_category, requested_category_column
+    )
     filtered_records = category_filter.pop('filtered_records')
 
     display_columns, display_records, representation = transform_records(
