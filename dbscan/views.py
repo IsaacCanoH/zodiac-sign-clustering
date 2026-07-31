@@ -1,6 +1,6 @@
 import json
 
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -8,35 +8,37 @@ from django.views import View
 
 from datasets.models import Dataset
 
-from .exports import export_kmeans_run, import_kmeans_run
-from .forms import KMeansTrainingForm
-from .models import KMeansRun
+from .exports import export_dbscan_run, import_dbscan_run
+from .forms import DBSCANTrainingForm
+from .models import DBSCANRun
 from .services import (
-    KMeansTrainingError,
-    build_training_setup,
-    clear_kmeans_runs,
-    train_kmeans,
+    DBSCANTrainingError,
+    build_dbscan_training_setup,
+    clear_dbscan_runs,
+    train_dbscan,
 )
 
 
-class KMeansTrainingView(View):
+class DBSCANTrainingView(View):
     def post(self, request):
         dataset = Dataset.objects.filter(pk=1).first()
         if not dataset:
             return redirect(f"{reverse('dashboard:index')}#training-pane")
 
-        setup = build_training_setup(dataset, request.POST.get('category'))
-        form = KMeansTrainingForm(
+        setup = build_dbscan_training_setup(
+            dataset, request.POST.get('category')
+        )
+        form = DBSCANTrainingForm(
             request.POST,
-            numeric_columns=setup['numeric_columns'],
-            categorical_columns=setup['categorical_columns'],
-            max_clusters=max(setup['max_clusters'], 2),
+            numeric_columns=setup['dbscan_numeric_columns'],
+            categorical_columns=setup['dbscan_categorical_columns'],
         )
         if not form.is_valid():
-            request.session['kmeans_form_state'] = {
+            request.session['dbscan_form_state'] = {
                 'data': {
-                    'algorithm': request.POST.get('algorithm', 'kmeans'),
-                    'cluster_count': request.POST.get('cluster_count', ''),
+                    'algorithm': 'dbscan',
+                    'epsilon': request.POST.get('epsilon', ''),
+                    'min_samples': request.POST.get('min_samples', ''),
                     'columns': request.POST.getlist('columns'),
                     'comparison_column': request.POST.get(
                         'comparison_column', ''
@@ -47,22 +49,22 @@ class KMeansTrainingView(View):
             return redirect(f"{reverse('dashboard:index')}#training-pane")
 
         try:
-            train_kmeans(
+            train_dbscan(
                 dataset=dataset,
                 selected_columns=form.cleaned_data['columns'],
-                cluster_count=form.cleaned_data['cluster_count'],
+                epsilon=form.cleaned_data['epsilon'],
+                min_samples=form.cleaned_data['min_samples'],
                 requested_category=request.POST.get('category'),
                 comparison_column=form.cleaned_data['comparison_column'],
             )
-        except KMeansTrainingError as error:
-            request.session['kmeans_form_state'] = {
+        except DBSCANTrainingError as error:
+            request.session['dbscan_form_state'] = {
                 'data': {
-                    'algorithm': 'kmeans',
-                    'cluster_count': form.cleaned_data['cluster_count'],
+                    'algorithm': 'dbscan',
+                    'epsilon': form.cleaned_data['epsilon'],
+                    'min_samples': form.cleaned_data['min_samples'],
                     'columns': form.cleaned_data['columns'],
-                    'comparison_column': form.cleaned_data[
-                        'comparison_column'
-                    ],
+                    'comparison_column': form.cleaned_data['comparison_column'],
                 },
                 'errors': {'__all__': [{'message': str(error), 'code': ''}]},
             }
@@ -71,24 +73,24 @@ class KMeansTrainingView(View):
         return redirect(f"{reverse('dashboard:index')}#results-pane")
 
 
-class KMeansResetView(View):
+class DBSCANResetView(View):
     def post(self, request):
         dataset = Dataset.objects.filter(pk=1).first()
         if dataset:
-            clear_kmeans_runs(dataset)
-        request.session.pop('kmeans_form_state', None)
+            clear_dbscan_runs(dataset)
+        request.session.pop('dbscan_form_state', None)
         return redirect(f"{reverse('dashboard:index')}#training-pane")
 
 
-class KMeansExportView(View):
-    """Download a single KMeansRun as a JSON file."""
+class DBSCANExportView(View):
+    """Download a single DBSCANRun as a JSON file."""
 
     def get(self, request, pk):
         dataset = Dataset.objects.filter(pk=1).first()
-        run = get_object_or_404(KMeansRun, pk=pk, dataset=dataset)
-        data = export_kmeans_run(run)
+        run = get_object_or_404(DBSCANRun, pk=pk, dataset=dataset)
+        data = export_dbscan_run(run)
         filename = (
-            f"kmeans_{run.cluster_count}clusters"
+            f"dbscan_eps{run.epsilon}_min{run.min_samples}"
             f"_{run.created_at.strftime('%Y%m%d_%H%M%S')}.json"
         )
         response = HttpResponse(
@@ -99,8 +101,8 @@ class KMeansExportView(View):
         return response
 
 
-class KMeansImportView(View):
-    """Upload a JSON file and restore it as a new KMeansRun."""
+class DBSCANImportView(View):
+    """Upload a JSON file and restore it as a new DBSCANRun."""
 
     def post(self, request):
         dataset = Dataset.objects.filter(pk=1).first()
@@ -116,10 +118,10 @@ class KMeansImportView(View):
         try:
             raw = uploaded.read().decode('utf-8')
             data = json.loads(raw)
-            import_kmeans_run(dataset, data)
+            import_dbscan_run(dataset, data)
         except (json.JSONDecodeError, KeyError, TypeError):
             request.session['model_import_error'] = (
-                'El archivo no es un modelo K-Means válido o está corrupto.'
+                'El archivo no es un modelo DBSCAN válido o está corrupto.'
             )
             return redirect(f"{reverse('dashboard:index')}#models-pane")
         except ValueError as error:
@@ -129,25 +131,24 @@ class KMeansImportView(View):
         return redirect(f"{reverse('dashboard:index')}#results-pane")
 
 
-class KMeansActivateView(View):
-    """Make a saved KMeansRun the active (most-recent) result."""
+class DBSCANActivateView(View):
+    """Make a saved DBSCANRun the active (most-recent) result."""
 
     def post(self, request, pk):
         dataset = Dataset.objects.filter(pk=1).first()
         if dataset:
-            # Update created_at so ordering ('-created_at') picks this one first
-            KMeansRun.objects.filter(pk=pk, dataset=dataset).update(
+            DBSCANRun.objects.filter(pk=pk, dataset=dataset).update(
                 created_at=timezone.now()
             )
         return redirect(f"{reverse('dashboard:index')}#results-pane")
 
 
-class KMeansDeleteView(View):
-    """Delete a single saved KMeansRun."""
+class DBSCANDeleteView(View):
+    """Delete a single saved DBSCANRun."""
 
     def post(self, request, pk):
         dataset = Dataset.objects.filter(pk=1).first()
         if dataset:
-            KMeansRun.objects.filter(pk=pk, dataset=dataset).delete()
+            DBSCANRun.objects.filter(pk=pk, dataset=dataset).delete()
         return redirect(f"{reverse('dashboard:index')}#models-pane")
 

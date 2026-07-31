@@ -4,21 +4,6 @@
         <p class="text-secondary mb-0">Carga un dataset para configurar el algoritmo K-Means.</p>
     </div>
 {% else %}
-    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
-        <div>
-            <h2 class="h5 fw-bold mb-1">Entrenamiento del algoritmo</h2>
-            <p class="text-secondary mb-0">Configura los grupos y las variables numéricas que participarán en el análisis.</p>
-        </div>
-        <div class="dropdown">
-            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                Algoritmo: K-Means
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end">
-                <li><button class="dropdown-item active" type="button">K-Means</button></li>
-            </ul>
-        </div>
-    </div>
-
     {% if training_category %}
         <div class="alert alert-light border py-2" role="status">
             El entrenamiento utilizará únicamente los registros de la categoría
@@ -148,3 +133,4 @@
         </div>
     </form>
 {% endif %}
+

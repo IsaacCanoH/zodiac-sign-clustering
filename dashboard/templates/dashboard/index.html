@@ -63,7 +63,7 @@
                 <div class="card h-100 border-0 shadow-sm">
                     <div class="card-body">
                         <p class="text-secondary small mb-2">Estado del modelo</p>
-                        {% if kmeans_run %}
+                        {% if kmeans_run or dbscan_run %}
                             <p class="h5 fw-bold mb-2">Entrenado</p>
                             <span class="badge text-bg-success">Disponible</span>
                         {% else %}
@@ -77,7 +77,13 @@
                 <div class="card h-100 border-0 shadow-sm">
                     <div class="card-body">
                         <p class="text-secondary small mb-2">Modelos guardados</p>
-                        <p class="h3 fw-bold mb-1">{{ dataset.kmeans_runs.count|default:0 }}</p>
+                        <p class="h3 fw-bold mb-1">
+                            {% if dataset %}
+                                {{ dataset.kmeans_runs.count|add:dataset.dbscan_runs.count }}
+                            {% else %}
+                                0
+                            {% endif %}
+                        </p>
                         <span class="text-secondary small">Disponibles para consulta</span>
                     </div>
                 </div>
@@ -115,26 +121,99 @@
                         {% include 'descriptive_statistics/workspace.html' %}
                     </div>
 
+                    {# ── Training pane: algorithm selector + dynamic form ── #}
                     <div class="tab-pane fade" id="training-pane" role="tabpanel" aria-labelledby="training-tab">
-                        {% include 'kmeans/training_workspace.html' %}
+                        {% if not dataset %}
+                            <div class="border rounded-3 bg-body-tertiary text-center p-5">
+                                <h2 class="h6 fw-bold">No hay datos para entrenar</h2>
+                                <p class="text-secondary mb-0">Carga un dataset para configurar el algoritmo de clustering.</p>
+                            </div>
+                        {% else %}
+                            {# Algorithm selector header #}
+                            <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
+                                <div>
+                                    <h2 class="h5 fw-bold mb-1">Entrenamiento del algoritmo</h2>
+                                    <p class="text-secondary mb-0">Configura las variables y parámetros que participarán en el análisis.</p>
+                                </div>
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-secondary dropdown-toggle" type="button"
+                                        id="algorithmDropdownBtn"
+                                        data-bs-toggle="dropdown" aria-expanded="false">
+                                        Algoritmo: <span id="algorithmLabel">K-Means</span>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end" id="algorithmDropdownMenu">
+                                        <li>
+                                            <button class="dropdown-item" type="button"
+                                                id="selectKmeans" data-algorithm="kmeans">
+                                                K-Means
+                                            </button>
+                                        </li>
+                                        <li>
+                                            <button class="dropdown-item" type="button"
+                                                id="selectDbscan" data-algorithm="dbscan">
+                                                DBSCAN
+                                            </button>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {# K-Means form panel #}
+                            <div id="kmeans-form-panel">
+                                {% include 'kmeans/training_workspace.html' %}
+                            </div>
+
+                            {# DBSCAN form panel #}
+                            <div id="dbscan-form-panel" style="display:none;">
+                                {% include 'dbscan/training_workspace.html' %}
+                            </div>
+                        {% endif %}
                     </div>
 
+                    {# ── Results pane: show latest run (either algorithm) ── #}
                     <div class="tab-pane fade" id="results-pane" role="tabpanel" aria-labelledby="results-tab">
-                        {% include 'kmeans/results_workspace.html' %}
+                        {% if not kmeans_run and not dbscan_run %}
+                            <div class="border rounded-3 bg-body-tertiary text-center p-5">
+                                <h2 class="h6 fw-bold">No existen resultados de entrenamiento</h2>
+                                <p class="text-secondary mb-0">Configura y ejecuta un algoritmo desde la pestaña de Entrenamiento.</p>
+                            </div>
+                        {% elif dbscan_run and not kmeans_run %}
+                            {% include 'dbscan/results_workspace.html' %}
+                        {% elif kmeans_run and not dbscan_run %}
+                            {% include 'kmeans/results_workspace.html' %}
+                        {% else %}
+                            {# Both exist — show tabs to pick which to view #}
+                            <div class="mb-4">
+                                <ul class="nav nav-pills" id="resultsTabs" role="tablist">
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link active" id="kmeans-results-tab"
+                                            data-bs-toggle="pill" data-bs-target="#kmeans-results-panel"
+                                            type="button" role="tab">
+                                            Resultados K-Means
+                                        </button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="dbscan-results-tab"
+                                            data-bs-toggle="pill" data-bs-target="#dbscan-results-panel"
+                                            type="button" role="tab">
+                                            Resultados DBSCAN
+                                        </button>
+                                    </li>
+                                </ul>
+                            </div>
+                            <div class="tab-content">
+                                <div class="tab-pane fade show active" id="kmeans-results-panel" role="tabpanel">
+                                    {% include 'kmeans/results_workspace.html' %}
+                                </div>
+                                <div class="tab-pane fade" id="dbscan-results-panel" role="tabpanel">
+                                    {% include 'dbscan/results_workspace.html' %}
+                                </div>
+                            </div>
+                        {% endif %}
                     </div>
 
                     <div class="tab-pane fade" id="models-pane" role="tabpanel" aria-labelledby="models-tab" tabindex="0">
-                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
-                            <div>
-                                <h2 class="h5 fw-bold mb-1">Modelos guardados</h2>
-                                <p class="text-secondary mb-0">Consulta y reutiliza modelos entrenados previamente.</p>
-                            </div>
-                            <button class="btn btn-outline-secondary" type="button" disabled>Importar modelo</button>
-                        </div>
-                        <div class="border rounded-3 bg-body-tertiary text-center p-5">
-                            <h3 class="h6 fw-bold">No existen modelos guardados</h3>
-                            <p class="text-secondary mb-0">Los modelos que guardes después de un entrenamiento aparecerán aquí.</p>
-                        </div>
+                        {% include 'dashboard/models_pane.html' %}
                     </div>
                 </div>
             </div>
@@ -154,6 +233,12 @@
     <script src="{% static 'datasets/equivalences.js' %}?v=2"></script>
     <script src="{% static 'descriptive_statistics/charts.js' %}"></script>
     <script src="{% static 'kmeans/workspace.js' %}?v=7"></script>
+
+    {# Pass the server-side active algorithm to the JS #}
+    <script>
+        window.__activeAlgorithm = "{{ ui_active_algorithm|default:'kmeans' }}";
+    </script>
+
     {% if open_upload_modal %}
         <script>
             bootstrap.Modal.getOrCreateInstance(document.getElementById('loadDataModal')).show();
