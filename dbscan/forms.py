@@ -13,6 +13,12 @@ class DBSCANTrainingForm(forms.Form):
         min_value=2,
         label='Mínimo de muestras',
     )
+    use_pca = forms.BooleanField(required=False, label='Aplicar PCA')
+    pca_components = forms.IntegerField(
+        min_value=1,
+        required=False,
+        label='Componentes PCA',
+    )
     columns = forms.MultipleChoiceField()
     comparison_column = forms.ChoiceField(required=False)
 
@@ -43,11 +49,25 @@ class DBSCANTrainingForm(forms.Form):
         cleaned_data = super().clean()
         comparison_column = cleaned_data.get('comparison_column')
         columns = cleaned_data.get('columns', [])
+        
         if comparison_column and comparison_column in columns:
             self.add_error(
                 'columns',
                 'La columna de comparación no puede utilizarse para entrenar.',
             )
+            
+        use_pca = cleaned_data.get('use_pca')
+        pca_components = cleaned_data.get('pca_components')
+        
+        if use_pca:
+            if not pca_components:
+                self.add_error('pca_components', 'Debe especificar el número de componentes PCA.')
+            elif len(columns) <= pca_components:
+                self.add_error(
+                    'pca_components',
+                    f'El número de componentes ({pca_components}) debe ser menor al número de columnas seleccionadas ({len(columns)}).'
+                )
+                
         return cleaned_data
 
 

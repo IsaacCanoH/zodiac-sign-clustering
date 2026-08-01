@@ -9,6 +9,7 @@ from .views import (
     DBSCANRetrainView,
     DBSCANSaveView,
     DBSCANTrainingView,
+    DBSCANParametersSuggestionView,
 )
 
 
@@ -23,4 +24,5 @@ urlpatterns = [
     path('<int:pk>/reentrenar/', DBSCANRetrainView.as_view(), name='retrain'),
     path('<int:pk>/guardar/', DBSCANSaveView.as_view(), name='save'),
     path('<int:pk>/eliminar/', DBSCANDeleteView.as_view(), name='delete'),
+    path('sugerir-parametros/', DBSCANParametersSuggestionView.as_view(), name='suggest_parameters'),
 ]

@@ -28,6 +28,10 @@ class DBSCANRun(models.Model):
     # DBSCAN hyperparameters
     epsilon = models.FloatField()
     min_samples = models.PositiveSmallIntegerField()
+    # Dimensionality Reduction
+    use_pca = models.BooleanField(default=False)
+    pca_components = models.PositiveSmallIntegerField(null=True, blank=True)
+
     silhouette = models.FloatField(null=True, blank=True)
     silhouette_sample_count = models.PositiveIntegerField(default=0)
     # Optional comparison column

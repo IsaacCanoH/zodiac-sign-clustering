@@ -3,7 +3,7 @@ import json
 from django.core.exceptions import ValidationError
 from django.contrib import messages
 from django.db import DatabaseError
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -20,6 +20,7 @@ from .services import (
     build_dbscan_training_setup,
     clear_dbscan_runs,
     train_dbscan,
+    compute_parameters_suggestion,
 )
 
 
@@ -59,6 +60,8 @@ class DBSCANTrainingView(View):
                     'description': request.POST.get('description', ''),
                     'epsilon': request.POST.get('epsilon', ''),
                     'min_samples': request.POST.get('min_samples', ''),
+                    'use_pca': request.POST.get('use_pca') == 'on',
+                    'pca_components': request.POST.get('pca_components', ''),
                     'columns': request.POST.getlist('columns'),
                     'comparison_column': request.POST.get(
                         'comparison_column', ''
@@ -83,6 +86,8 @@ class DBSCANTrainingView(View):
                 name=form.cleaned_data['name'],
                 topic=form.cleaned_data['topic'],
                 description=form.cleaned_data['description'],
+                use_pca=form.cleaned_data.get('use_pca', False),
+                pca_components=form.cleaned_data.get('pca_components'),
                 save_immediately=False,
             )
         except DBSCANTrainingError as error:
@@ -94,6 +99,8 @@ class DBSCANTrainingView(View):
                     'description': form.cleaned_data['description'],
                     'epsilon': form.cleaned_data['epsilon'],
                     'min_samples': form.cleaned_data['min_samples'],
+                    'use_pca': form.cleaned_data.get('use_pca', False),
+                    'pca_components': form.cleaned_data.get('pca_components'),
                     'columns': form.cleaned_data['columns'],
                     'comparison_column': form.cleaned_data['comparison_column'],
                 },
@@ -247,6 +254,8 @@ class DBSCANRetrainView(View):
                 comparison_column=run.comparison_column,
                 name=run.name, topic=run.topic, description=run.description,
                 parent_run=run,
+                use_pca=run.use_pca,
+                pca_components=run.pca_components,
                 save_immediately=False,
             )
         except DBSCANTrainingError as error:
@@ -286,4 +295,32 @@ class DBSCANDeleteView(View):
     def post(self, request, pk):
         DBSCANRun.objects.filter(pk=pk).delete()
         return _dashboard_redirect('models-pane')
+
+
+class DBSCANParametersSuggestionView(View):
+    """Calculate and return optimal MinPts and Epsilon suggestions, along with chart data."""
+
+    def post(self, request):
+        dataset = Dataset.objects.filter(pk=1).first()
+        if not dataset:
+            return JsonResponse({'error': 'Dataset no encontrado.'}, status=404)
+
+        try:
+            data = json.loads(request.body)
+            columns = data.get('columns', [])
+            category = data.get('category')
+            category_column = data.get('category_column')
+            use_pca = data.get('use_pca', False)
+            pca_components = data.get('pca_components')
+            
+            result = compute_parameters_suggestion(
+                dataset, columns, category, category_column, use_pca, pca_components
+            )
+            
+            if 'error' in result:
+                return JsonResponse({'error': result['error']}, status=400)
+                
+            return JsonResponse(result)
+        except Exception as e:
+            return JsonResponse({'error': f'Error interno: {str(e)}'}, status=500)
 
