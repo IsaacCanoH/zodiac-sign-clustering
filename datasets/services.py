@@ -1,3 +1,6 @@
+import re
+import unicodedata
+
 from django.core.paginator import Paginator
 from django.db import transaction
 
@@ -7,6 +10,20 @@ from .models import Dataset, EquivalenceConfiguration
 
 PAGE_SIZE = 25
 CATEGORY_COLUMN = 'categoria'
+CATEGORY_NAME_PRIORITY = {
+    'categoria': 0,
+    'categorias': 0,
+    'category': 0,
+    'categories': 0,
+    'etiqueta': 1,
+    'etiquetas': 1,
+    'label': 1,
+    'labels': 1,
+    'clase': 2,
+    'clases': 2,
+    'class': 2,
+    'classes': 2,
+}
 
 
 def replace_dataset(cleaned_data):
@@ -33,6 +50,25 @@ def _normalize_category(value):
     return str(value).strip().casefold()
 
 
+def _normalized_name_words(value):
+    """Return accent/case-insensitive words from a column name."""
+    normalized = unicodedata.normalize('NFKD', str(value).casefold())
+    without_accents = ''.join(
+        character for character in normalized
+        if not unicodedata.combining(character)
+    )
+    return re.findall(r'[a-z0-9]+', without_accents)
+
+
+def _category_name_priority(column):
+    matches = (
+        CATEGORY_NAME_PRIORITY[word]
+        for word in _normalized_name_words(column)
+        if word in CATEGORY_NAME_PRIORITY
+    )
+    return min(matches, default=None)
+
+
 def _category_columns(dataset):
     """Return low-cardinality columns suitable for a user-selected filter."""
     candidates = []
@@ -44,7 +80,8 @@ def _category_columns(dataset):
         }
         values.discard('')
         unique_count = len(values)
-        is_legacy_category = column.strip().casefold() == CATEGORY_COLUMN
+        name_priority = _category_name_priority(column)
+        is_legacy_category = name_priority == 0
         if unique_count <= 50 and (
             (unique_count >= 2 and unique_count < record_count)
             or (is_legacy_category and unique_count >= 1)
@@ -53,14 +90,20 @@ def _category_columns(dataset):
                 'name': column,
                 'unique_count': unique_count,
                 'label': column,
+                'suggested': name_priority is not None,
+                '_name_priority': name_priority,
             })
-    return sorted(
+    sorted_candidates = sorted(
         candidates,
         key=lambda item: (
-            item['name'].strip().casefold() != CATEGORY_COLUMN,
-            item['name'].casefold(),
+            item['_name_priority'] is None,
+            item['_name_priority'] if item['_name_priority'] is not None else 99,
+            unicodedata.normalize('NFKD', item['name'].casefold()),
         ),
     )
+    for item in sorted_candidates:
+        item.pop('_name_priority')
+    return sorted_candidates
 
 
 def _build_category_options(records, category_column):
@@ -83,13 +126,7 @@ def filter_dataset_by_category(
     category_column = (
         requested_category_column
         if requested_category_column in allowed_columns
-        else next(
-            (
-                item['name'] for item in category_columns
-                if item['name'].strip().casefold() == CATEGORY_COLUMN
-            ),
-            category_columns[0]['name'] if category_columns else None,
-        )
+        else (category_columns[0]['name'] if category_columns else None)
     )
     category_options = (
         _build_category_options(dataset.records, category_column)

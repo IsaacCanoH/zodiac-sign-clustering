@@ -45,15 +45,6 @@ class DashboardView(TemplateView):
             )
         )
 
-        # Determine which algorithm should be active in the UI.
-        active_algo = context.get('active_algorithm')
-        if active_algo == 'dbscan':
-            context['ui_active_algorithm'] = 'dbscan'
-        elif active_algo == 'hierarchical':
-            context['ui_active_algorithm'] = 'hierarchical'
-        else:
-            context['ui_active_algorithm'] = 'kmeans'
-
         dataset = context.get('dataset')
         
         # Saved models form an independent catalogue. They must remain visible
@@ -125,5 +116,19 @@ class DashboardView(TemplateView):
             requested_results_view
             if requested_results_view in {'kmeans', 'dbscan', 'hierarchical'}
             else 'kmeans'
+        )
+        available_results = [
+            algorithm
+            for algorithm, run_key in (
+                ('kmeans', 'kmeans_run'),
+                ('dbscan', 'dbscan_run'),
+                ('hierarchical', 'hierarchical_run'),
+            )
+            if context.get(run_key)
+        ]
+        context['ui_active_algorithm'] = (
+            context['results_view']
+            if context['results_view'] in available_results
+            else (available_results[0] if available_results else 'kmeans')
         )
         return context

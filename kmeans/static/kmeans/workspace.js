@@ -4,7 +4,7 @@
     // ── Tab auto-activation on hash change ──────────────────────────────────
     const activeHash = window.location.hash;
     const urlParams = new URLSearchParams(window.location.search);
-    const resultsView = urlParams.get("results_view"); // 'kmeans' | 'dbscan' | null
+    const resultsView = urlParams.get("results_view");
 
     const dashboardTabByHash = {
         "#data-pane": "data-tab",
@@ -23,8 +23,12 @@
     // When the results pane has both algorithms (Bootstrap pills), activate the
     // correct pill based on the `results_view` query parameter.
     if (activeHash === "#results-pane" && resultsView && window.bootstrap) {
-        const pillId =
-            resultsView === "dbscan" ? "dbscan-results-tab" : "kmeans-results-tab";
+        const resultPillByAlgorithm = {
+            kmeans: "kmeans-results-tab",
+            dbscan: "dbscan-results-tab",
+            hierarchical: "hierarchical-results-tab",
+        };
+        const pillId = resultPillByAlgorithm[resultsView];
         const pill = document.getElementById(pillId);
         if (pill) {
             // Wait for Bootstrap tab to finish showing the pane before switching pill

@@ -19,9 +19,12 @@
                 </button>
                 <ul class="dropdown-menu w-100">
                     {% for column in category_columns %}
-                        <li><a class="dropdown-item text-truncate{% if column.name == category_column %} active{% endif %}"
+                        <li><a class="dropdown-item d-flex align-items-center gap-2{% if column.name == category_column %} active{% endif %}"
                             title="{{ column.name }} ({{ column.unique_count }})"
-                            href="?category_column={{ column.name|urlencode }}&amp;representation={{ representation }}#dataset-table">{{ column.name }} ({{ column.unique_count }})</a></li>
+                            href="?category_column={{ column.name|urlencode }}&amp;representation={{ representation }}#dataset-table">
+                            <span class="text-truncate flex-grow-1">{{ column.name }} ({{ column.unique_count }})</span>
+                            {% if column.suggested %}<span class="badge text-bg-primary">Sugerida</span>{% endif %}
+                        </a></li>
                     {% endfor %}
                 </ul>
             </div>

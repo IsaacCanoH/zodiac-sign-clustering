@@ -20,6 +20,44 @@ from .services import filter_dataset_by_category
 
 
 class DatasetViewTests(TestCase):
+    def test_filter_columns_prioritize_normalized_semantic_names(self):
+        columns = ['Grupo aleatorio', 'ETIQUETAS', 'Categorías del signo']
+        dataset = Dataset.objects.create(
+            pk=1, source_name='signos.csv', columns=columns,
+            records=[
+                {column: 'A' if index < 2 else 'B' for column in columns}
+                for index in range(4)
+            ],
+        )
+
+        result = filter_dataset_by_category(dataset)
+
+        self.assertEqual(result['category_column'], 'Categorías del signo')
+        self.assertEqual(
+            [(item['name'], item['suggested']) for item in result['category_columns']],
+            [
+                ('Categorías del signo', True),
+                ('ETIQUETAS', True),
+                ('Grupo aleatorio', False),
+            ],
+        )
+
+    def test_manual_filter_column_selection_is_preserved(self):
+        columns = ['Category', 'Grupo']
+        dataset = Dataset.objects.create(
+            pk=1, source_name='datos.csv', columns=columns,
+            records=[
+                {'Category': 'A', 'Grupo': 'X'},
+                {'Category': 'A', 'Grupo': 'X'},
+                {'Category': 'B', 'Grupo': 'Y'},
+                {'Category': 'B', 'Grupo': 'Y'},
+            ],
+        )
+
+        result = filter_dataset_by_category(dataset, requested_category_column='Grupo')
+
+        self.assertEqual(result['category_column'], 'Grupo')
+
     def test_user_can_select_any_low_cardinality_filter_column(self):
         dataset = Dataset.objects.create(
             pk=1, source_name='generico.csv',
