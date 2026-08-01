@@ -40,7 +40,7 @@
 
         <div class="row g-4">
             <div class="col-lg-4">
-                <div class="card h-100">
+                <div class="card mb-3">
                     <div class="card-header bg-white">
                         <h3 class="h6 fw-bold mb-1">Parámetros de DBSCAN</h3>
                         <p class="small text-secondary mb-0">Configura el radio de vecindad y el mínimo de puntos para formar un cluster.</p>
@@ -55,7 +55,7 @@
                                 type="number"
                                 id="dbscanEpsilon"
                                 name="epsilon"
-                                step="0.01"
+                                step="any"
                                 min="0.01"
                                 value="{{ dbscan_form.epsilon.value|default:dbscan_default_epsilon }}"
                             >
@@ -102,6 +102,36 @@
                         <p class="small text-secondary mt-2 mb-0">
                             Se utiliza únicamente para evaluar la composición de los clusters; no participa en el entrenamiento.
                         </p>
+                    </div>
+                </div>
+                
+                <div class="card mt-4">
+                    <div class="card-header bg-white">
+                        <h3 class="h6 fw-bold mb-1">Opciones Avanzadas</h3>
+                        <p class="small text-secondary mb-0">Reducción de dimensionalidad.</p>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" role="switch" id="dbscanUsePca" name="use_pca" {% if dbscan_form.use_pca.value %}checked{% endif %}>
+                            <label class="form-check-label fw-semibold" for="dbscanUsePca">Aplicar PCA</label>
+                        </div>
+                        <div id="pcaComponentsContainer" class="{% if not dbscan_form.use_pca.value %}d-none{% endif %}">
+                            <label class="form-label" for="dbscanPcaComponents">
+                                Número de Componentes PCA
+                            </label>
+                            <input
+                                class="form-control"
+                                type="number"
+                                id="dbscanPcaComponents"
+                                name="pca_components"
+                                step="1"
+                                min="1"
+                                value="{{ dbscan_form.pca_components.value|default:2 }}"
+                            >
+                            <p class="small text-secondary mt-2 mb-0">
+                                Comprime las variables seleccionadas a un menor número de dimensiones (recomendado: 2 o 3) antes de buscar densidades.
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -155,6 +185,33 @@
             </div>
         </div>
 
+        <div class="card mt-4 mb-4 shadow-sm border-primary">
+            <div class="card-body">
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                    <div>
+                        <h4 class="h6 fw-bold mb-1 text-primary">¿No sabes qué parámetros usar?</h4>
+                        <p class="small text-secondary mb-0">Podemos sugerirte los valores óptimos analizando las K-distancias de tus datos.</p>
+                    </div>
+                    <button type="button" class="btn btn-outline-primary" id="btnSuggestDbscanParams">
+                        Sugerir parámetros óptimos
+                    </button>
+                </div>
+                
+                <div id="dbscanSuggestionLoading" class="text-center py-4 d-none">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Calculando...</span>
+                    </div>
+                    <p class="mt-2 small text-secondary">Analizando densidades...</p>
+                </div>
+
+                <div id="dbscanSuggestionError" class="alert alert-danger mt-3 d-none small"></div>
+
+                <div id="dbscanChartContainer" class="mt-4 d-none" style="height: 300px;">
+                    <canvas id="kDistanceChart"></canvas>
+                </div>
+            </div>
+        </div>
+
         <div class="alert alert-light border mt-4 mb-3">
             <strong>¿Cómo funciona DBSCAN?</strong>
             Las variables se estandarizan antes del entrenamiento. DBSCAN descubre los clusters
@@ -169,4 +226,158 @@
             </button>
         </div>
     </form>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const btnSuggest = document.getElementById("btnSuggestDbscanParams");
+        if (!btnSuggest) return;
+        
+        let kDistanceChartInstance = null;
+
+        btnSuggest.addEventListener("click", async () => {
+            const columns = Array.from(document.querySelectorAll('.dbscan-column:checked')).map(cb => cb.value);
+            if (columns.length === 0) {
+                alert("Por favor, selecciona al menos una columna para el entrenamiento.");
+                return;
+            }
+
+            const categoryInput = document.querySelector('input[name="category"]');
+            const categoryColumnInput = document.querySelector('input[name="category_column"]');
+            
+            const usePcaInput = document.getElementById('dbscanUsePca');
+            const pcaComponentsInput = document.getElementById('dbscanPcaComponents');
+            
+            const payload = {
+                columns: columns,
+                category: categoryInput ? categoryInput.value : null,
+                category_column: categoryColumnInput ? categoryColumnInput.value : null,
+                use_pca: usePcaInput ? usePcaInput.checked : false,
+                pca_components: (usePcaInput && usePcaInput.checked && pcaComponentsInput) ? parseInt(pcaComponentsInput.value, 10) : null
+            };
+
+            const loading = document.getElementById("dbscanSuggestionLoading");
+            const errorDiv = document.getElementById("dbscanSuggestionError");
+            const chartContainer = document.getElementById("dbscanChartContainer");
+            
+            loading.classList.remove("d-none");
+            errorDiv.classList.add("d-none");
+            chartContainer.classList.add("d-none");
+            btnSuggest.disabled = true;
+
+            try {
+                const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+                const response = await fetch("{% url 'dbscan:suggest_parameters' %}", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRFToken": csrfToken
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || "Error al calcular los parámetros.");
+                }
+                
+                // Actualizar los inputs
+                document.getElementById("dbscanMinSamples").value = data.min_samples;
+                document.getElementById("dbscanEpsilon").value = data.epsilon;
+                
+                // Mostrar gráfico
+                chartContainer.classList.remove("d-none");
+                
+                if (kDistanceChartInstance) {
+                    kDistanceChartInstance.destroy();
+                }
+                
+                const ctx = document.getElementById("kDistanceChart").getContext("2d");
+                
+                // Point colors and radii
+                const pointColors = data.chart.x.map(x => x === data.chart.knee_x ? '#ef4444' : '#3b82f6');
+                const pointRadii = data.chart.x.map(x => x === data.chart.knee_x ? 6 : 2);
+                
+                kDistanceChartInstance = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.chart.x,
+                        datasets: [{
+                            label: 'Distancia al k-ésimo vecino',
+                            data: data.chart.y,
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            pointBackgroundColor: pointColors,
+                            pointBorderColor: pointColors,
+                            pointRadius: pointRadii,
+                            pointHoverRadius: 8,
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            intersect: false,
+                            mode: 'index',
+                        },
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Gráfico de K-Distancias (Método del Codo)'
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (label) label += ': ';
+                                        if (context.parsed.y !== null) {
+                                            label += context.parsed.y.toFixed(3);
+                                        }
+                                        // Encontrar el label 'x' original
+                                        const originalX = data.chart.x[context.dataIndex];
+                                        if (originalX === data.chart.knee_x) {
+                                            label += ' (Codo Óptimo)';
+                                        }
+                                        return label;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                title: { display: true, text: 'Puntos ordenados por distancia' },
+                                ticks: { display: false } // hide individual point indices
+                            },
+                            y: {
+                                title: { display: true, text: 'Distancia' }
+                            }
+                        }
+                    }
+                });
+                
+            } catch (err) {
+                errorDiv.textContent = err.message;
+                errorDiv.classList.remove("d-none");
+            } finally {
+                loading.classList.add("d-none");
+                btnSuggest.disabled = false;
+            }
+        });
+        
+        const usePcaCheckbox = document.getElementById("dbscanUsePca");
+        const pcaContainer = document.getElementById("pcaComponentsContainer");
+        if (usePcaCheckbox && pcaContainer) {
+            usePcaCheckbox.addEventListener("change", (e) => {
+                if (e.target.checked) {
+                    pcaContainer.classList.remove("d-none");
+                } else {
+                    pcaContainer.classList.add("d-none");
+                }
+            });
+        }
+    });
+</script>
 {% endif %}
+

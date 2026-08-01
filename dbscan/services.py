@@ -12,6 +12,8 @@ from sklearn.cluster import DBSCAN
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import NearestNeighbors
+from kneed import KneeLocator
 
 from datasets.equivalences import canonical_number
 from datasets.model_validation import (
@@ -312,6 +314,8 @@ def train_dbscan(
     description='',
     parent_run=None,
     save_immediately=True,
+    use_pca=False,
+    pca_components=None,
 ):
     category_filter, rows = _filtered_rows(
         dataset, requested_category, requested_category_column
@@ -355,6 +359,21 @@ def train_dbscan(
 
     scaler = StandardScaler()
     scaled_matrix = scaler.fit_transform(matrix)
+
+    preprocessing_state = {
+        'mean': scaler.mean_.tolist(),
+        'scale': scaler.scale_.tolist(),
+        'variance': scaler.var_.tolist(),
+        'imputed_values': imputed_values,
+        'use_pca': use_pca,
+        'pca_components': pca_components,
+    }
+
+    if use_pca and pca_components and pca_components < len(selected_columns):
+        pca = PCA(n_components=pca_components)
+        scaled_matrix = pca.fit_transform(scaled_matrix)
+        preprocessing_state['pca_explained_variance'] = pca.explained_variance_ratio_.tolist()
+        preprocessing_state['pca_components_matrix'] = pca.components_.tolist()
 
     estimator = DBSCAN(eps=epsilon, min_samples=min_samples, metric='euclidean')
     try:
@@ -468,6 +487,8 @@ def train_dbscan(
         noise_count=noise_count,
         epsilon=epsilon,
         min_samples=min_samples,
+        use_pca=use_pca,
+        pca_components=pca_components,
         silhouette=score,
         silhouette_sample_count=silhouette_sample_count,
         comparison_column=comparison_column,
@@ -491,15 +512,11 @@ def train_dbscan(
             category_filter=category_filter['selected_category'],
             comparison_column=comparison_column,
             epsilon=epsilon, min_samples=min_samples,
+            use_pca=use_pca, pca_components=pca_components,
             category_column=category_filter['category_column'] or '',
         ),
         schema_profile=build_schema_profile(dataset),
-        preprocessing_state={
-            'mean': scaler.mean_.tolist(),
-            'scale': scaler.scale_.tolist(),
-            'variance': scaler.var_.tolist(),
-            'imputed_values': imputed_values,
-        },
+        preprocessing_state=preprocessing_state,
         estimator_state={
             'core_sample_indices': core_indices.tolist(),
             'components': getattr(
@@ -712,3 +729,63 @@ def build_dbscan_results_context(dataset, page_number=None):
         ),
         'dbscan_cluster_summaries': cluster_summaries,
     }
+
+
+def compute_parameters_suggestion(dataset, selected_columns, requested_category=None, requested_category_column=None, use_pca=False, pca_components=None):
+    category_filter, rows = _filtered_rows(
+        dataset, requested_category, requested_category_column
+    )
+    if len(rows) < 2 or not selected_columns:
+        return {'error': 'No hay suficientes datos o columnas para sugerir parámetros.'}
+
+    selected_columns = list(dict.fromkeys(selected_columns))
+    
+    if use_pca and pca_components and pca_components < len(selected_columns):
+        effective_dimensions = pca_components
+    else:
+        effective_dimensions = len(selected_columns)
+        
+    min_samples = max(4, 2 * effective_dimensions)
+
+    try:
+        matrix, _ = _build_matrix(rows, selected_columns)
+        scaler = StandardScaler()
+        scaled_matrix = scaler.fit_transform(matrix)
+
+        if use_pca and pca_components and pca_components < len(selected_columns):
+            pca = PCA(n_components=pca_components)
+            scaled_matrix = pca.fit_transform(scaled_matrix)
+
+        nn = NearestNeighbors(n_neighbors=min_samples)
+        nn.fit(scaled_matrix)
+        distances, _ = nn.kneighbors(scaled_matrix)
+
+        k_distances = distances[:, -1]
+        k_distances.sort()
+
+        x = np.arange(len(k_distances))
+        kneedle = KneeLocator(x, k_distances, S=1.0, curve='convex', direction='increasing')
+
+        knee_x = kneedle.knee
+        knee_y = kneedle.knee_y if knee_x is not None else None
+
+        if knee_y is None:
+            knee_y = float(k_distances[-1] / 2.0)
+
+        step = max(1, len(k_distances) // MAX_CHART_POINTS)
+        chart_x = x[::step].tolist()
+        chart_y = k_distances[::step].tolist()
+
+        return {
+            'min_samples': min_samples,
+            'epsilon': round(float(knee_y), 3),
+            'chart': {
+                'x': chart_x,
+                'y': [round(float(v), 4) for v in chart_y],
+                'knee_x': int(knee_x) if knee_x is not None else None,
+                'knee_y': round(float(knee_y), 4) if knee_y is not None else None,
+            }
+        }
+    except Exception as error:
+        return {'error': f'Error calculando distancias: {str(error)}'}
+
