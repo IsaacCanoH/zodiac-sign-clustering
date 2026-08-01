@@ -213,6 +213,85 @@
         });
     }
 
+    // ── Hierarchical result chart ───────────────────────────────────────────
+    const hierarchicalChartElement = document.getElementById("hierarchicalClusterChart");
+    const hierarchicalChartDataElement = document.getElementById("hierarchical-chart-data");
+    if (hierarchicalChartElement && hierarchicalChartDataElement && window.Chart) {
+        const chartData = JSON.parse(hierarchicalChartDataElement.textContent);
+        const colors = [
+            "#0057B8",
+            "#E66100",
+            "#009E73",
+            "#6A00A8",
+            "#D7191C",
+            "#8C564B",
+            "#00A6D6",
+            "#B28A00",
+            "#CC79A7",
+        ];
+        let colorIndex = 0;
+        const datasets = chartData.clusters.map((cluster) => {
+            const color = colors[colorIndex++ % colors.length];
+            return {
+                label: `Cluster ${cluster.cluster}`,
+                data: cluster.points,
+                backgroundColor: color,
+                borderColor: color,
+                pointStyle: "circle",
+                pointRadius: 4,
+                pointHoverRadius: 6,
+            };
+        });
+        new Chart(hierarchicalChartElement, {
+            type: "scatter",
+            data: {datasets},
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {mode: "nearest", intersect: true},
+                plugins: {
+                    legend: {
+                        position: "bottom",
+                        labels: {usePointStyle: true, boxWidth: 10},
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title(items) {
+                                return items[0]?.raw
+                                    ? `Registro ${items[0].raw.row}`
+                                    : "";
+                            },
+                            label(context) {
+                                const point = context.raw;
+                                const coordinates = [
+                                    `${chartData.x_label}: ${Number(point.x).toFixed(3)}`,
+                                ];
+                                if (chartData.y_label) {
+                                    coordinates.push(
+                                        `${chartData.y_label}: ${Number(point.y).toFixed(3)}`,
+                                    );
+                                }
+                                return coordinates;
+                            },
+                        },
+                    },
+                },
+                scales: {
+                    x: {title: {display: true, text: chartData.x_label}},
+                    y: {
+                        display: Boolean(chartData.y_label),
+                        title: {
+                            display: Boolean(chartData.y_label),
+                            text: chartData.y_label,
+                        },
+                        suggestedMin: chartData.y_label ? undefined : -1,
+                        suggestedMax: chartData.y_label ? undefined : 1,
+                    },
+                },
+            },
+        });
+    }
+
     // ── Algorithm selector (dropdown in training pane) ───────────────────────
     const STORAGE_KEY = "zodiac_active_algorithm";
     const kmeansPanelEl = document.getElementById("kmeans-form-panel");
@@ -384,6 +463,66 @@
         checkboxes.forEach((cb) => cb.addEventListener("change", updateCount));
         comparisonColumn?.addEventListener("change", updateComparisonColumn);
         dbscanForm.addEventListener("submit", () => {
+            if (trainButton) {
+                trainButton.disabled = true;
+                trainButton.textContent = "Entrenando…";
+            }
+        });
+        updateComparisonColumn();
+    }
+
+    // ── Hierarchical form logic ──────────────────────────────────────────────
+    const hierarchicalForm = document.getElementById("hierarchicalTrainingForm");
+    if (hierarchicalForm) {
+        const checkboxes = [...hierarchicalForm.querySelectorAll(".hierarchical-column")];
+        const selectedCount = document.getElementById("hierarchicalSelectedCount");
+        const trainButton = document.getElementById("trainHierarchicalButton");
+        const comparisonColumn = document.getElementById("hierarchicalComparisonColumn");
+        const toggleColumnsButton = document.getElementById("toggleHierarchicalColumns");
+
+        const updateCount = () => {
+            const count = checkboxes.filter((cb) => cb.checked).length;
+            if (selectedCount) {
+                selectedCount.textContent =
+                    `${count} ${count === 1 ? "columna seleccionada" : "columnas seleccionadas"}`;
+            }
+            const availableCheckboxes = checkboxes.filter((cb) => !cb.disabled);
+            const allSelected =
+                availableCheckboxes.length > 0 &&
+                availableCheckboxes.every((cb) => cb.checked);
+            if (toggleColumnsButton) {
+                toggleColumnsButton.textContent = allSelected
+                    ? "Deseleccionar todas"
+                    : "Seleccionar todas";
+                toggleColumnsButton.disabled = availableCheckboxes.length === 0;
+            }
+        };
+
+        const updateComparisonColumn = () => {
+            const selectedComparison = comparisonColumn?.value || "";
+            checkboxes.forEach((checkbox) => {
+                const isComparison = checkbox.value === selectedComparison;
+                checkbox.disabled = isComparison;
+                if (isComparison) checkbox.checked = false;
+                checkbox.closest(".form-check")?.classList.toggle(
+                    "bg-body-tertiary",
+                    isComparison,
+                );
+            });
+            updateCount();
+        };
+
+        toggleColumnsButton?.addEventListener("click", () => {
+            const availableCheckboxes = checkboxes.filter((cb) => !cb.disabled);
+            const shouldSelect = !availableCheckboxes.every((cb) => cb.checked);
+            availableCheckboxes.forEach((cb) => {
+                cb.checked = shouldSelect;
+            });
+            updateCount();
+        });
+        checkboxes.forEach((cb) => cb.addEventListener("change", updateCount));
+        comparisonColumn?.addEventListener("change", updateComparisonColumn);
+        hierarchicalForm.addEventListener("submit", () => {
             if (trainButton) {
                 trainButton.disabled = true;
                 trainButton.textContent = "Entrenando…";

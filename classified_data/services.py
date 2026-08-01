@@ -15,6 +15,11 @@ ALGORITHMS = {
         'related_name': 'dbscan_runs',
         'cluster_column': 'Cluster DBSCAN',
     },
+    'hierarchical': {
+        'label': 'Jerárquico',
+        'related_name': 'hierarchical_runs',
+        'cluster_column': 'Cluster Jerárquico',
+    },
 }
 
 
