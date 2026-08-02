@@ -613,6 +613,20 @@ def _chart_context(run, matrix):
         [centroid['values'] for centroid in run.centroids],
         dtype=float,
     )
+    preprocessing = run.preprocessing_state or {}
+    means = np.asarray(preprocessing.get('mean', []), dtype=float)
+    scales = np.asarray(preprocessing.get('scale', []), dtype=float)
+    if means.shape != (feature_count,) or scales.shape != (feature_count,):
+        distance_scaler = StandardScaler().fit(matrix)
+        means = distance_scaler.mean_
+        scales = distance_scaler.scale_
+    safe_scales = np.where(scales == 0, 1.0, scales)
+    normalized_matrix = (matrix - means) / safe_scales
+    normalized_centers = (centers - means) / safe_scales
+    distances_to_centers = np.linalg.norm(
+        normalized_matrix[:, np.newaxis, :] - normalized_centers[np.newaxis, :, :],
+        axis=2,
+    )
     if feature_count == 1:
         coordinates = np.column_stack((matrix[:, 0], np.zeros(len(matrix))))
         center_coordinates = np.column_stack(
@@ -659,11 +673,40 @@ def _chart_context(run, matrix):
             assignment = run.assignments[int(index)]
             if assignment['cluster'] != cluster:
                 continue
+            point_distances = distances_to_centers[index]
+            ordered_centers = np.argsort(point_distances)
+            assigned_index = assignment['cluster'] - 1
+            second_index = next(
+                int(center_index)
+                for center_index in ordered_centers
+                if int(center_index) != assigned_index
+            )
+            assigned_distance = float(point_distances[assigned_index])
+            second_distance = float(point_distances[second_index])
+            relative_margin = (
+                (second_distance - assigned_distance) / assigned_distance
+                if assigned_distance > 0
+                else float('inf')
+            )
+            if relative_margin <= 0.05:
+                assignment_confidence = 'Asignación muy ajustada'
+            elif relative_margin <= 0.15:
+                assignment_confidence = 'Cerca de la frontera'
+            else:
+                assignment_confidence = 'Asignación clara'
             points.append(
                 {
                     'x': round(float(coordinates[index, 0]), 6),
                     'y': round(float(coordinates[index, 1]), 6),
                     'row': assignment['row_number'],
+                    'cluster': assignment['cluster'],
+                    'centroid_distance': round(assigned_distance, 4),
+                    'second_cluster': second_index + 1,
+                    'second_centroid_distance': round(second_distance, 4),
+                    'distance_difference': round(
+                        second_distance - assigned_distance, 4
+                    ),
+                    'assignment_confidence': assignment_confidence,
                 }
             )
         clusters.append({'cluster': cluster, 'points': points})

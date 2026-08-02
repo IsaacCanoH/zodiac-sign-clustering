@@ -130,7 +130,7 @@
                                         <input type="hidden" name="category_column" value="{{ category_column }}">
                                         <button class="btn btn-sm btn-primary" type="submit"
                                             {% if not item.exact or not item.compatible %}disabled title="{{ item.reasons|join:' ' }}{% if not item.reasons %}Activar requiere el dataset exacto.{% endif %}"{% endif %}>
-                                            Activar
+                                            Cargar resultados
                                         </button>
                                     </form>
                                     <form method="post" action="{% url 'kmeans:retrain' run.pk %}">
@@ -156,7 +156,7 @@
                                         <input type="hidden" name="category_column" value="{{ category_column }}">
                                         <button class="btn btn-sm btn-primary" type="submit"
                                             {% if not item.exact or not item.compatible %}disabled title="{{ item.reasons|join:' ' }}{% if not item.reasons %}Activar requiere el dataset exacto.{% endif %}"{% endif %}>
-                                            Activar
+                                            Cargar resultados
                                         </button>
                                     </form>
                                     <form method="post" action="{% url 'dbscan:retrain' run.pk %}">
@@ -182,7 +182,7 @@
                                         <input type="hidden" name="category_column" value="{{ category_column }}">
                                         <button class="btn btn-sm btn-primary" type="submit" 
                                             {% if not item.exact or not item.compatible %}disabled title="{{ item.reasons|join:' ' }}{% if not item.reasons %}Activar requiere el dataset exacto.{% endif %}"{% endif %}>
-                                            Activar
+                                            Cargar resultados
                                         </button>
                                     </form>
                                     <form method="post" action="{% url 'hierarchical:retrain' run.pk %}">

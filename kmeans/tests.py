@@ -419,6 +419,30 @@ class KMeansServiceTests(TestCase):
             {(point['x'], point['y']) for point in plotted_points},
             {(1.0, 2.0), (1.2, 2.2), (8.0, 9.0), (8.2, 9.2)},
         )
+        for point in plotted_points:
+            self.assertIn(point['assignment_confidence'], {
+                'Asignación muy ajustada',
+                'Cerca de la frontera',
+                'Asignación clara',
+            })
+            self.assertEqual(
+                point['cluster'],
+                next(
+                    assignment['cluster']
+                    for assignment in run.assignments
+                    if assignment['row_number'] == point['row']
+                ),
+            )
+            self.assertNotEqual(point['cluster'], point['second_cluster'])
+            self.assertLessEqual(
+                point['centroid_distance'],
+                point['second_centroid_distance'],
+            )
+            self.assertAlmostEqual(
+                point['distance_difference'],
+                point['second_centroid_distance'] - point['centroid_distance'],
+                places=3,
+            )
         self.assertEqual(
             [(item['x'], item['y']) for item in chart['centroids']],
             [

@@ -70,18 +70,23 @@
             pointRadius: 4,
             pointHoverRadius: 6,
         }));
-        datasets.push({
-            label: "Centroides",
-            data: chartData.centroids.map((centroid) => ({
-                ...centroid,
-                isCentroid: true,
-            })),
-            backgroundColor: "#212529",
-            borderColor: "#ffffff",
-            borderWidth: 2,
-            pointStyle: "crossRot",
-            pointRadius: 9,
-            pointHoverRadius: 11,
+        chartData.centroids.forEach((centroid) => {
+            const clusterIndex = chartData.clusters.findIndex(
+                (cluster) => cluster.cluster === centroid.cluster,
+            );
+            const centroidColor = colors[
+                (clusterIndex >= 0 ? clusterIndex : centroid.cluster - 1) % colors.length
+            ];
+            datasets.push({
+                label: `Centroide Cluster ${centroid.cluster}`,
+                data: [{...centroid, isCentroid: true}],
+                backgroundColor: centroidColor,
+                borderColor: "#212529",
+                borderWidth: 2,
+                pointStyle: "circle",
+                pointRadius: 6,
+                pointHoverRadius: 8,
+            });
         });
         new Chart(chartElement, {
             type: "scatter",
@@ -93,6 +98,8 @@
                 plugins: {
                     legend: {
                         position: "bottom",
+                        // La leyenda conserva un tamaño uniforme aunque los
+                        // centroides sean ligeramente mayores en la gráfica.
                         labels: {usePointStyle: true, boxWidth: 10},
                     },
                     tooltip: {
@@ -112,6 +119,15 @@
                                 if (chartData.y_label) {
                                     coordinates.push(
                                         `${chartData.y_label}: ${Number(point.y).toFixed(3)}`,
+                                    );
+                                }
+                                if (!point.isCentroid) {
+                                    coordinates.push(
+                                        `Cluster asignado: ${point.cluster}`,
+                                        `Distancia al centroide ${point.cluster}: ${Number(point.centroid_distance).toFixed(3)}`,
+                                        `Segundo más cercano: Cluster ${point.second_cluster} — ${Number(point.second_centroid_distance).toFixed(3)}`,
+                                        `Diferencia: ${Number(point.distance_difference).toFixed(3)}`,
+                                        `Evaluación: ${point.assignment_confidence}`,
                                     );
                                 }
                                 return coordinates;
