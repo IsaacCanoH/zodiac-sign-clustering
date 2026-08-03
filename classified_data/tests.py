@@ -5,7 +5,6 @@ from django.urls import reverse
 from openpyxl import load_workbook
 
 from datasets.models import Dataset
-from dbscan.services import train_dbscan
 from kmeans.services import train_kmeans
 
 from .services import PAGE_SIZE, build_classified_context
@@ -24,7 +23,7 @@ class ClassifiedDataTests(TestCase):
 
         self.assertContains(response, 'Datos clasificados')
         self.assertContains(response, 'Todavía no existen datos clasificados')
-        self.assertContains(response, 'Ejecuta un entrenamiento de K-Means o DBSCAN')
+        self.assertContains(response, 'Ejecuta un entrenamiento de K-Means o clustering jerárquico')
 
     def test_kmeans_shows_original_columns_row_and_cluster(self):
         dataset = self.create_dataset(30)
@@ -64,47 +63,6 @@ class ClassifiedDataTests(TestCase):
             response,
             'classified_page=3#classified-pane',
         )
-
-    def test_selector_lists_both_trained_algorithms(self):
-        dataset = self.create_clustered_dataset()
-        train_kmeans(dataset, ['x', 'y'], 2)
-        train_dbscan(dataset, ['x', 'y'], epsilon=0.1, min_samples=2)
-
-        response = self.client.get(
-            reverse('dashboard:index'),
-            {'classified_algorithm': 'dbscan'},
-        )
-
-        options = response.context['classified_available_algorithms']
-        self.assertEqual(
-            options,
-            [
-                {'value': 'kmeans', 'label': 'K-Means'},
-                {'value': 'dbscan', 'label': 'DBSCAN'},
-            ],
-        )
-        self.assertEqual(response.context['classified_algorithm'], 'dbscan')
-        self.assertContains(response, 'Cluster DBSCAN')
-
-    def test_dbscan_filter_includes_noise(self):
-        dataset = self.create_clustered_dataset()
-        run = train_dbscan(
-            dataset,
-            ['x', 'y'],
-            epsilon=0.1,
-            min_samples=2,
-        )
-        self.assertEqual(run.noise_count, 1)
-
-        context = build_classified_context(
-            dataset,
-            requested_algorithm='dbscan',
-            requested_cluster='-1',
-        )
-
-        self.assertEqual(context['classified_page'].paginator.count, 1)
-        self.assertEqual(context['classified_rows'][0]['row_number'], 7)
-        self.assertEqual(context['classified_rows'][0]['cluster_label'], 'Ruido')
 
     def test_category_training_only_exposes_analyzed_rows(self):
         dataset = Dataset.objects.create(
@@ -174,16 +132,6 @@ class ClassifiedDataTests(TestCase):
         )
         self.assertIn('DatosClasificados', worksheet.tables)
 
-    def test_download_rejects_algorithm_without_training(self):
-        self.create_dataset(10)
-
-        response = self.client.get(
-            reverse('classified_data:download'),
-            {'algorithm': 'dbscan'},
-        )
-
-        self.assertEqual(response.status_code, 404)
-
     def test_download_only_contains_rows_analyzed_by_category(self):
         dataset = Dataset.objects.create(
             pk=1,
@@ -228,18 +176,6 @@ class ClassifiedDataTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
-
-    def test_dbscan_results_no_longer_repeat_assignment_table(self):
-        dataset = self.create_clustered_dataset()
-        train_dbscan(dataset, ['x', 'y'], epsilon=0.1, min_samples=2)
-
-        response = self.client.get(
-            reverse('dashboard:index'),
-            {'results_view': 'dbscan'},
-        )
-
-        self.assertNotContains(response, 'Asignaciones por registro')
-        self.assertNotContains(response, 'Páginas de resultados DBSCAN')
 
     @staticmethod
     def create_dataset(row_count):

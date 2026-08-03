@@ -3,8 +3,6 @@ from django.views.generic import TemplateView
 from datasets.components import build_workspace_context
 from classified_data.components import build_classified_workspace_context
 from datasets.model_validation import model_compatibility
-from dbscan.components import build_dbscan_workspace_context
-from dbscan.models import DBSCANRun
 from descriptive_statistics.components import build_statistics_workspace_context
 from kmeans.components import build_kmeans_workspace_context
 from hierarchical.components import build_hierarchical_workspace_context
@@ -29,11 +27,6 @@ class DashboardView(TemplateView):
             )
         )
         context.update(
-            build_dbscan_workspace_context(
-                self.request, context.get('dataset')
-            )
-        )
-        context.update(
             build_hierarchical_workspace_context(
                 self.request, context.get('dataset')
             )
@@ -50,7 +43,6 @@ class DashboardView(TemplateView):
         # Saved models form an independent catalogue. They must remain visible
         # even when their source dataset is removed or replaced.
         context['all_kmeans_runs'] = list(KMeansRun.objects.filter(is_saved=True))
-        context['all_dbscan_runs'] = list(DBSCANRun.objects.filter(is_saved=True))
         context['all_hierarchical_runs'] = list(
             HierarchicalRun.objects.filter(is_saved=True)
         )
@@ -72,18 +64,6 @@ class DashboardView(TemplateView):
                         ),
                     }
                     for run in context['all_kmeans_runs']
-                ],
-                *[
-                    {
-                        'algorithm': 'dbscan',
-                        'run': run,
-                        **model_compatibility(
-                            dataset, run,
-                            requested_category=requested_category,
-                            requested_category_column=requested_category_column,
-                        ),
-                    }
-                    for run in context['all_dbscan_runs']
                 ],
                 *[
                     {
@@ -114,14 +94,13 @@ class DashboardView(TemplateView):
         requested_results_view = self.request.GET.get('results_view')
         context['results_view'] = (
             requested_results_view
-            if requested_results_view in {'kmeans', 'dbscan', 'hierarchical'}
+            if requested_results_view in {'kmeans', 'hierarchical'}
             else 'kmeans'
         )
         available_results = [
             algorithm
             for algorithm, run_key in (
                 ('kmeans', 'kmeans_run'),
-                ('dbscan', 'dbscan_run'),
                 ('hierarchical', 'hierarchical_run'),
             )
             if context.get(run_key)

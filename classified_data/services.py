@@ -10,11 +10,6 @@ ALGORITHMS = {
         'related_name': 'kmeans_runs',
         'cluster_column': 'Cluster K-Means',
     },
-    'dbscan': {
-        'label': 'DBSCAN',
-        'related_name': 'dbscan_runs',
-        'cluster_column': 'Cluster DBSCAN',
-    },
     'hierarchical': {
         'label': 'Jerárquico',
         'related_name': 'hierarchical_runs',

@@ -65,7 +65,7 @@
                 <div class="card h-100 border-0 shadow-sm">
                     <div class="card-body">
                         <p class="text-secondary small mb-2">Estado del modelo</p>
-                        {% if kmeans_run or dbscan_run or hierarchical_run %}
+                        {% if kmeans_run or hierarchical_run %}
                         <p class="h5 fw-bold mb-2">Entrenado</p>
                         <span class="badge text-bg-success">Disponible</span>
                         {% else %}
@@ -145,11 +145,6 @@
                                         </button>
                                     </li>
                                     <li>
-                                        <button class="dropdown-item" type="button" id="selectDbscan" data-algorithm="dbscan">
-                                            DBSCAN
-                                        </button>
-                                    </li>
-                                    <li>
                                         <button class="dropdown-item" type="button" id="selectHierarchical" data-algorithm="hierarchical">
                                             Clustering Jerárquico
                                         </button>
@@ -163,11 +158,6 @@
                             {% include 'kmeans/training_workspace.html' %}
                         </div>
 
-                        {# DBSCAN form panel #}
-                        <div id="dbscan-form-panel" style="display:none;">
-                            {% include 'dbscan/training_workspace.html' %}
-                        </div>
-
                         {# Hierarchical form panel #}
                         <div id="hierarchical-form-panel" style="display:none;">
                             {% include 'hierarchical/training_workspace.html' %}
@@ -177,7 +167,7 @@
 
                     {# ── Results pane: show latest run (either algorithm) ── #}
                     <div class="tab-pane fade" id="results-pane" role="tabpanel" aria-labelledby="results-tab">
-                        {% if not kmeans_run and not dbscan_run and not hierarchical_run %}
+                        {% if not kmeans_run and not hierarchical_run %}
                         <div class="border rounded-3 bg-body-tertiary text-center p-5">
                             <h2 class="h6 fw-bold">No existen resultados de entrenamiento</h2>
                             <p class="text-secondary mb-0">Configura y ejecuta un algoritmo desde la pestaña de Entrenamiento.</p>
@@ -190,13 +180,6 @@
                                 <li class="nav-item" role="presentation">
                                     <button class="nav-link {% if ui_active_algorithm == 'kmeans' %}active{% endif %}" id="kmeans-results-tab" data-bs-toggle="pill" data-bs-target="#kmeans-results-panel" type="button" role="tab">
                                         Resultados K-Means
-                                    </button>
-                                </li>
-                                {% endif %}
-                                {% if dbscan_run %}
-                                <li class="nav-item" role="presentation">
-                                    <button class="nav-link {% if ui_active_algorithm == 'dbscan' %}active{% endif %}" id="dbscan-results-tab" data-bs-toggle="pill" data-bs-target="#dbscan-results-panel" type="button" role="tab">
-                                        Resultados DBSCAN
                                     </button>
                                 </li>
                                 {% endif %}
@@ -213,11 +196,6 @@
                             {% if kmeans_run %}
                             <div class="tab-pane fade {% if ui_active_algorithm == 'kmeans' %}show active{% endif %}" id="kmeans-results-panel" role="tabpanel">
                                 {% include 'kmeans/results_workspace.html' %}
-                            </div>
-                            {% endif %}
-                            {% if dbscan_run %}
-                            <div class="tab-pane fade {% if ui_active_algorithm == 'dbscan' %}show active{% endif %}" id="dbscan-results-panel" role="tabpanel">
-                                {% include 'dbscan/results_workspace.html' %}
                             </div>
                             {% endif %}
                             {% if hierarchical_run %}
@@ -278,18 +256,15 @@
             }
 
             const selectKmeans = document.getElementById("selectKmeans");
-            const selectDbscan = document.getElementById("selectDbscan");
             const selectHierarchical = document.getElementById("selectHierarchical"); 
 
             const kmeansPanel = document.getElementById("kmeans-form-panel");
-            const dbscanPanel = document.getElementById("dbscan-form-panel");
             const hierarchicalPanel = document.getElementById("hierarchical-form-panel"); 
 
             const algorithmLabel = document.getElementById("algorithmLabel");
 
             function switchAlgorithm(algorithmName) {
                 if (kmeansPanel) kmeansPanel.style.display = 'none';
-                if (dbscanPanel) dbscanPanel.style.display = 'none';
                 if (hierarchicalPanel) hierarchicalPanel.style.display = 'none';
 
                 document.querySelectorAll('#algorithmDropdownMenu .dropdown-item').forEach(item => {
@@ -300,10 +275,6 @@
                     kmeansPanel.style.display = 'block';
                     algorithmLabel.textContent = 'K-Means';
                     if (selectKmeans) selectKmeans.classList.add('active');
-                } else if (algorithmName === 'dbscan' && dbscanPanel) {
-                    dbscanPanel.style.display = 'block';
-                    algorithmLabel.textContent = 'DBSCAN';
-                    if (selectDbscan) selectDbscan.classList.add('active');
                 } else if (algorithmName === 'hierarchical' && hierarchicalPanel) {
                     hierarchicalPanel.style.display = 'block';
                     algorithmLabel.textContent = 'Clustering Jerárquico';
@@ -318,17 +289,15 @@
             }
 
             if (selectKmeans) selectKmeans.addEventListener("click", () => switchAlgorithm('kmeans'));
-            if (selectDbscan) selectDbscan.addEventListener("click", () => switchAlgorithm('dbscan'));
             if (selectHierarchical) selectHierarchical.addEventListener("click", () => switchAlgorithm('hierarchical'));
         });
 
-        // Script de importación de tu equipo (DBSCAN / KMeans / Jerárquico)
+        // Detecta si el archivo pertenece a K-Means o al modelo jerárquico.
         (() => {
             const fileInput = document.getElementById("modelFileInput");
             const importForm = document.getElementById("importModelForm");
             if (!fileInput || !importForm) return;
             const kmeansUrl = "{% url 'kmeans:import' %}";
-            const dbscanUrl = "{% url 'dbscan:import' %}";
             const hierarchicalUrl = "{% url 'hierarchical:import' %}";
             importForm.addEventListener("submit", (event) => {
                 const file = fileInput.files[0];
@@ -338,9 +307,7 @@
                 reader.addEventListener("load", () => {
                     try {
                         const parsedType = JSON.parse(reader.result).type;
-                        if (parsedType === "dbscan") {
-                            importForm.action = dbscanUrl;
-                        } else if (parsedType === "hierarchical") {
+                        if (parsedType === "hierarchical") {
                             importForm.action = hierarchicalUrl;
                         } else {
                             importForm.action = kmeansUrl;

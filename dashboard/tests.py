@@ -2,8 +2,6 @@ from django.test import TestCase
 from django.urls import reverse
 
 from datasets.models import Dataset
-from dbscan.models import DBSCANRun
-from dbscan.services import train_dbscan
 from kmeans.models import KMeansRun
 from kmeans.services import train_kmeans
 
@@ -21,7 +19,7 @@ class DashboardViewTests(TestCase):
 
         self.assertEqual(response.status_code, 405)
 
-    def test_saved_models_use_four_column_scrollable_card_grid(self):
+    def test_saved_models_use_spacious_three_column_scrollable_card_grid(self):
         dataset = Dataset.objects.create(
             pk=1,
             source_name='modelos.csv',
@@ -34,25 +32,23 @@ class DashboardViewTests(TestCase):
             ],
         )
         train_kmeans(dataset, ['x', 'y'], 2)
-        train_dbscan(dataset, ['x', 'y'], epsilon=0.1, min_samples=2)
 
         response = self.client.get(reverse('dashboard:index'))
 
         self.assertContains(
             response,
-            'max-height: 35rem; overflow-y: auto; overscroll-behavior: contain;',
+            'max-height: 42rem; overflow-y: auto; overscroll-behavior: contain;',
         )
         self.assertContains(
             response,
-            'class="col-sm-6 col-lg-4 col-xl-3"',
-            count=2,
+            'class="col-md-6 col-xl-4"',
+            count=1,
         )
         self.assertContains(response, 'Todos los modelos')
         self.assertContains(response, 'K-Means')
-        self.assertContains(response, 'DBSCAN')
         self.assertEqual(
             {item['algorithm'] for item in response.context['all_saved_models']},
-            {'kmeans', 'dbscan'},
+            {'kmeans'},
         )
 
     def test_deleting_dataset_preserves_downloadable_model_catalogue(self):
@@ -68,25 +64,16 @@ class DashboardViewTests(TestCase):
             ],
         )
         kmeans_run = train_kmeans(dataset, ['x', 'y'], 2)
-        dbscan_run = train_dbscan(
-            dataset, ['x', 'y'], epsilon=0.1, min_samples=2
-        )
-
         self.client.post(reverse('datasets:delete'))
 
         self.assertFalse(Dataset.objects.exists())
         self.assertIsNone(KMeansRun.objects.get(pk=kmeans_run.pk).dataset)
-        self.assertIsNone(DBSCANRun.objects.get(pk=dbscan_run.pk).dataset)
         response = self.client.get(reverse('dashboard:index'))
-        self.assertEqual(len(response.context['all_saved_models']), 2)
-        self.assertEqual(response.context['saved_model_count'], 2)
+        self.assertEqual(len(response.context['all_saved_models']), 1)
+        self.assertEqual(response.context['saved_model_count'], 1)
         self.assertContains(
             self.client.get(reverse('kmeans:export', args=[kmeans_run.pk])),
             '"type": "kmeans"',
-        )
-        self.assertContains(
-            self.client.get(reverse('dbscan:export', args=[dbscan_run.pk])),
-            '"type": "dbscan"',
         )
 
     def test_current_filter_controls_compatibility_and_retraining(self):

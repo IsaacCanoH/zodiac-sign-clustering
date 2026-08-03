@@ -16,6 +16,9 @@
             </p>
         </div>
         <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-dark" href="{% url 'kmeans:results_pdf' kmeans_run.pk %}">
+                Descargar resultados PDF
+            </a>
             <a class="btn btn-outline-primary" href="{% url 'dashboard:index' %}#training-pane">Nuevo entrenamiento</a>
             <button class="btn btn-outline-danger" type="button" data-bs-toggle="modal" data-bs-target="#resetKMeansModal">
                 Reiniciar entrenamiento

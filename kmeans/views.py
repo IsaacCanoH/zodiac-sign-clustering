@@ -7,6 +7,7 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.text import slugify
 from django.views import View
 
 from datasets.models import Dataset
@@ -15,6 +16,7 @@ from datasets.model_validation import model_compatibility
 from .exports import export_kmeans_run, import_kmeans_run
 from .forms import KMeansSaveForm, KMeansTrainingForm
 from .models import KMeansRun
+from .pdf_reports import build_kmeans_results_pdf
 from .services import (
     KMeansTrainingError,
     build_training_setup,
@@ -131,6 +133,23 @@ class KMeansExportView(View):
             content_type='application/json',
         )
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+
+class KMeansResultsPdfView(View):
+    """Download the visible K-Means training results as a PDF report."""
+
+    def get(self, request, pk):
+        dataset = get_object_or_404(Dataset, pk=1)
+        run = get_object_or_404(KMeansRun, pk=pk, dataset=dataset)
+        source = slugify(run.dataset_source_name.rsplit('.', 1)[0]) or 'dataset'
+        response = HttpResponse(
+            build_kmeans_results_pdf(dataset, run),
+            content_type='application/pdf',
+        )
+        response['Content-Disposition'] = (
+            f'attachment; filename="resultados-kmeans-{source}.pdf"'
+        )
         return response
 
 

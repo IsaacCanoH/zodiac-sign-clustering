@@ -635,6 +635,24 @@ class KMeansViewTests(TestCase):
         self.assertContains(response, 'Reiniciar entrenamiento')
         self.assertContains(response, reverse('kmeans:reset'))
 
+    def test_results_can_be_downloaded_as_pdf(self):
+        dataset = self.create_dataset()
+        run = train_kmeans(dataset, ['Edad', 'Puntaje'], 2)
+
+        dashboard = self.client.get(reverse('dashboard:index'))
+        self.assertContains(
+            dashboard,
+            reverse('kmeans:results_pdf', args=[run.pk]),
+        )
+        response = self.client.get(
+            reverse('kmeans:results_pdf', args=[run.pk])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertIn('attachment;', response['Content-Disposition'])
+        self.assertTrue(response.content.startswith(b'%PDF'))
+
     def test_reset_removes_training_and_preserves_dataset(self):
         dataset = self.create_dataset()
         train_kmeans(
