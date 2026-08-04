@@ -23,7 +23,7 @@ class ClassifiedDataTests(TestCase):
 
         self.assertContains(response, 'Datos clasificados')
         self.assertContains(response, 'Todavía no existen datos clasificados')
-        self.assertContains(response, 'Ejecuta un entrenamiento de K-Means o clustering jerárquico')
+        self.assertContains(response, 'Ejecuta un entrenamiento de K-Means para consultar aquí')
 
     def test_kmeans_shows_original_columns_row_and_cluster(self):
         dataset = self.create_dataset(30)

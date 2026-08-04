@@ -35,7 +35,6 @@ INSTALLED_APPS = [
     'datasets',
     'descriptive_statistics',
     'kmeans',
-    'hierarchical',
     'classified_data',
     'django.contrib.admin',
     'django.contrib.auth',

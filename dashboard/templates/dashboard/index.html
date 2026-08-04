@@ -65,7 +65,7 @@
                 <div class="card h-100 border-0 shadow-sm">
                     <div class="card-body">
                         <p class="text-secondary small mb-2">Estado del modelo</p>
-                        {% if kmeans_run or hierarchical_run %}
+                        {% if kmeans_run %}
                         <p class="h5 fw-bold mb-2">Entrenado</p>
                         <span class="badge text-bg-success">Disponible</span>
                         {% else %}
@@ -134,76 +134,20 @@
                                 <h2 class="h5 fw-bold mb-1">Entrenamiento del algoritmo</h2>
                                 <p class="text-secondary mb-0">Configura las variables y parámetros que participarán en el análisis.</p>
                             </div>
-                            <div class="dropdown">
-                                <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="algorithmDropdownBtn" data-bs-toggle="dropdown" aria-expanded="false">
-                                    Algoritmo: <span id="algorithmLabel">K-Means</span>
-                                </button>
-                                <ul class="dropdown-menu dropdown-menu-end" id="algorithmDropdownMenu">
-                                    <li>
-                                        <button class="dropdown-item" type="button" id="selectKmeans" data-algorithm="kmeans">
-                                            K-Means
-                                        </button>
-                                    </li>
-                                    <li>
-                                        <button class="dropdown-item" type="button" id="selectHierarchical" data-algorithm="hierarchical">
-                                            Clustering Jerárquico
-                                        </button>
-                                    </li>
-                                </ul>
-                            </div>
                         </div>
 
-                        {# K-Means form panel #}
-                        <div id="kmeans-form-panel">
-                            {% include 'kmeans/training_workspace.html' %}
-                        </div>
-
-                        {# Hierarchical form panel #}
-                        <div id="hierarchical-form-panel" style="display:none;">
-                            {% include 'hierarchical/training_workspace.html' %}
-                        </div>
+                        {% include 'kmeans/training_workspace.html' %}
                         {% endif %}
                     </div>
 
-                    {# ── Results pane: show latest run (either algorithm) ── #}
                     <div class="tab-pane fade" id="results-pane" role="tabpanel" aria-labelledby="results-tab">
-                        {% if not kmeans_run and not hierarchical_run %}
+                        {% if not kmeans_run %}
                         <div class="border rounded-3 bg-body-tertiary text-center p-5">
                             <h2 class="h6 fw-bold">No existen resultados de entrenamiento</h2>
                             <p class="text-secondary mb-0">Configura y ejecuta un algoritmo desde la pestaña de Entrenamiento.</p>
                         </div>
                         {% else %}
-                        {# Tabs para cuando existen resultados #}
-                        <div class="mb-4">
-                            <ul class="nav nav-pills" id="resultsTabs" role="tablist">
-                                {% if kmeans_run %}
-                                <li class="nav-item" role="presentation">
-                                    <button class="nav-link {% if ui_active_algorithm == 'kmeans' %}active{% endif %}" id="kmeans-results-tab" data-bs-toggle="pill" data-bs-target="#kmeans-results-panel" type="button" role="tab">
-                                        Resultados K-Means
-                                    </button>
-                                </li>
-                                {% endif %}
-                                {% if hierarchical_run %}
-                                <li class="nav-item" role="presentation">
-                                    <button class="nav-link {% if ui_active_algorithm == 'hierarchical' %}active{% endif %}" id="hierarchical-results-tab" data-bs-toggle="pill" data-bs-target="#hierarchical-results-panel" type="button" role="tab">
-                                        Resultados Jerárquico
-                                    </button>
-                                </li>
-                                {% endif %}
-                            </ul>
-                        </div>
-                        <div class="tab-content">
-                            {% if kmeans_run %}
-                            <div class="tab-pane fade {% if ui_active_algorithm == 'kmeans' %}show active{% endif %}" id="kmeans-results-panel" role="tabpanel">
-                                {% include 'kmeans/results_workspace.html' %}
-                            </div>
-                            {% endif %}
-                            {% if hierarchical_run %}
-                            <div class="tab-pane fade {% if ui_active_algorithm == 'hierarchical' %}show active{% endif %}" id="hierarchical-results-panel" role="tabpanel">
-                                {% include 'hierarchical/results_workspace.html' with run=hierarchical_run %}
-                            </div>
-                            {% endif %}
-                        </div>
+                        {% include 'kmeans/results_workspace.html' %}
                         {% endif %}
                     </div>
 
@@ -231,12 +175,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="{% static 'datasets/equivalences.js' %}?v=2"></script>
     <script src="{% static 'descriptive_statistics/charts.js' %}"></script>
-    <script src="{% static 'kmeans/workspace.js' %}?v=17"></script>
-
-    {# Pass the server-side active algorithm to the JS #}
-    <script>
-        window.__activeAlgorithm = "{{ ui_active_algorithm|default:'kmeans' }}";
-    </script>
+    <script src="{% static 'kmeans/workspace.js' %}?v=18"></script>
 
     {% if open_upload_modal %}
     <script>
@@ -255,71 +194,7 @@
                 }
             }
 
-            const selectKmeans = document.getElementById("selectKmeans");
-            const selectHierarchical = document.getElementById("selectHierarchical"); 
-
-            const kmeansPanel = document.getElementById("kmeans-form-panel");
-            const hierarchicalPanel = document.getElementById("hierarchical-form-panel"); 
-
-            const algorithmLabel = document.getElementById("algorithmLabel");
-
-            function switchAlgorithm(algorithmName) {
-                if (kmeansPanel) kmeansPanel.style.display = 'none';
-                if (hierarchicalPanel) hierarchicalPanel.style.display = 'none';
-
-                document.querySelectorAll('#algorithmDropdownMenu .dropdown-item').forEach(item => {
-                    item.classList.remove('active');
-                });
-
-                if (algorithmName === 'kmeans' && kmeansPanel) {
-                    kmeansPanel.style.display = 'block';
-                    algorithmLabel.textContent = 'K-Means';
-                    if (selectKmeans) selectKmeans.classList.add('active');
-                } else if (algorithmName === 'hierarchical' && hierarchicalPanel) {
-                    hierarchicalPanel.style.display = 'block';
-                    algorithmLabel.textContent = 'Clustering Jerárquico';
-                    if (selectHierarchical) selectHierarchical.classList.add('active');
-                }
-            }
-
-            if (window.__activeAlgorithm) {
-                switchAlgorithm(window.__activeAlgorithm);
-            } else {
-                switchAlgorithm('kmeans');
-            }
-
-            if (selectKmeans) selectKmeans.addEventListener("click", () => switchAlgorithm('kmeans'));
-            if (selectHierarchical) selectHierarchical.addEventListener("click", () => switchAlgorithm('hierarchical'));
         });
-
-        // Detecta si el archivo pertenece a K-Means o al modelo jerárquico.
-        (() => {
-            const fileInput = document.getElementById("modelFileInput");
-            const importForm = document.getElementById("importModelForm");
-            if (!fileInput || !importForm) return;
-            const kmeansUrl = "{% url 'kmeans:import' %}";
-            const hierarchicalUrl = "{% url 'hierarchical:import' %}";
-            importForm.addEventListener("submit", (event) => {
-                const file = fileInput.files[0];
-                if (!file) return;
-                event.preventDefault();
-                const reader = new FileReader();
-                reader.addEventListener("load", () => {
-                    try {
-                        const parsedType = JSON.parse(reader.result).type;
-                        if (parsedType === "hierarchical") {
-                            importForm.action = hierarchicalUrl;
-                        } else {
-                            importForm.action = kmeansUrl;
-                        }
-                    } catch (_) {
-                        importForm.action = kmeansUrl;
-                    }
-                    importForm.submit();
-                });
-                reader.readAsText(file);
-            });
-        })();
     </script>
 </body>
 

@@ -136,7 +136,54 @@
             Los valores numéricos faltantes se sustituyen por la mediana de su columna.
         </div>
 
-        <div class="d-flex justify-content-end">
+        {% if kmeans_analysis %}
+        <section class="card border-primary mb-4" aria-labelledby="kmeansAssistedHeading">
+            <div class="card-header bg-white d-flex flex-column flex-lg-row justify-content-between gap-2">
+                <div>
+                    <h3 class="h6 fw-bold mb-1" id="kmeansAssistedHeading">Selección asistida del número de clusters</h3>
+                    <p class="small text-secondary mb-0">Diagnóstico temporal con {{ kmeans_analysis.sample_count }} registros y {{ kmeans_analysis.feature_count }} variables. Todavía no se ha guardado ningún modelo.</p>
+                </div>
+                <div class="text-lg-end">
+                    <span class="badge text-bg-primary">Recomendación: {{ kmeans_analysis.recommended_k }} clusters</span>
+                    <span class="badge text-bg-light border">Confianza {{ kmeans_analysis.confidence|lower }}</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <p class="mb-3">{{ kmeans_analysis.explanation }}</p>
+                <div class="row g-3 align-items-stretch">
+                    <div class="col-xl-7">
+                        <div class="table-responsive border rounded-2">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead class="table-light"><tr><th>k</th><th class="text-end">Inercia</th><th class="text-end">Silueta</th><th class="text-end">Davies-Bouldin</th><th class="text-end">Calinski-Harabasz</th><th class="text-end">Cluster menor</th></tr></thead>
+                                <tbody>
+                                {% for candidate in kmeans_analysis.results %}
+                                    <tr class="{% if candidate.k == kmeans_analysis.recommended_k %}table-primary{% endif %}">
+                                        <th>{{ candidate.k }}{% if candidate.k == kmeans_analysis.recommended_k %} <span class="badge text-bg-primary">Recomendado</span>{% endif %}</th>
+                                        <td class="text-end">{{ candidate.inertia|floatformat:2 }}</td>
+                                        <td class="text-end">{% if candidate.silhouette != None %}{{ candidate.silhouette|floatformat:4 }}{% else %}—{% endif %}</td>
+                                        <td class="text-end">{% if candidate.davies_bouldin != None %}{{ candidate.davies_bouldin|floatformat:4 }}{% else %}—{% endif %}</td>
+                                        <td class="text-end">{% if candidate.calinski_harabasz != None %}{{ candidate.calinski_harabasz|floatformat:2 }}{% else %}—{% endif %}</td>
+                                        <td class="text-end">{{ candidate.smallest_cluster }} ({{ candidate.smallest_cluster_percentage|floatformat:1 }}%)</td>
+                                    </tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="col-xl-5">
+                        <div class="border rounded-2 p-3 h-100" style="min-height: 18rem;"><canvas id="kmeansSelectionChart" aria-label="Curvas para seleccionar el número de clusters" role="img"></canvas></div>
+                    </div>
+                </div>
+                <p class="small text-secondary mt-3 mb-0">La recomendación prioriza la mayor silueta, contrasta el codo y evita favorecer diferencias insignificantes. Puedes confirmar otro valor de k si existe una justificación de negocio.</p>
+            </div>
+        </section>
+        {{ kmeans_analysis|json_script:"kmeans-analysis-data" }}
+        {% endif %}
+
+        <div class="d-flex flex-wrap justify-content-end gap-2">
+            <button class="btn {% if kmeans_analysis %}btn-outline-primary{% else %}btn-primary{% endif %} px-4" id="analyzeKMeansButton" type="submit" formaction="{% url 'kmeans:analyze' %}" {% if not can_train %}disabled{% endif %}>
+                {% if kmeans_analysis %}Actualizar diagnóstico{% else %}Analizar número de clusters{% endif %}
+            </button>
             <button class="btn btn-primary px-4" id="trainKMeansButton" type="submit" {% if not can_train %}disabled{% endif %}>
                 Entrenar K-Means
             </button>

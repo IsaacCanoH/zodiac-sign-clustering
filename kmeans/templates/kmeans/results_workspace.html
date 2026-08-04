@@ -3,6 +3,7 @@
         <h2 class="h6 fw-bold">No existen resultados de entrenamiento</h2>
         <p class="text-secondary mb-0">Configura y ejecuta K-Means desde la pestaña de Entrenamiento.</p>
     </div>
+
 {% else %}
     <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
         <div>
@@ -25,6 +26,14 @@
             </button>
         </div>
     </div>
+
+    {% if kmeans_run.quality_warnings %}
+        <div class="mb-4" aria-label="Advertencias de calidad">
+        {% for warning in kmeans_run.quality_warnings %}
+            <div class="alert alert-{{ warning.level }} py-2 mb-2"><strong>Revisión recomendada:</strong> {{ warning.message }}</div>
+        {% endfor %}
+        </div>
+    {% endif %}
 
     <section class="mb-4" aria-labelledby="kmeansMetricsHeading">
         <div class="d-flex align-items-center gap-2 mb-3">
@@ -69,7 +78,25 @@
                 Evaluación interna mediante silueta
             </span>
         </div>
+        <div class="row g-3 mt-0">
+            <div class="col-md-4"><div class="border rounded-3 p-3 h-100"><span class="small text-secondary d-block">Davies-Bouldin <span title="Menor es mejor">ⓘ</span></span><strong>{{ kmeans_run.estimator_state.internal_metrics.davies_bouldin|floatformat:4 }}</strong></div></div>
+            <div class="col-md-4"><div class="border rounded-3 p-3 h-100"><span class="small text-secondary d-block">Calinski-Harabasz <span title="Mayor es mejor">ⓘ</span></span><strong>{{ kmeans_run.estimator_state.internal_metrics.calinski_harabasz|floatformat:2 }}</strong></div></div>
+            <div class="col-md-4"><div class="border rounded-3 p-3 h-100"><span class="small text-secondary d-block">Estabilidad entre inicializaciones</span><strong>ARI medio {{ kmeans_run.stability_metrics.mean_adjusted_rand|floatformat:4 }}</strong></div></div>
+        </div>
     </section>
+
+    {% if kmeans_run.results_by_k %}
+    <section class="card mb-4" aria-labelledby="kmeansSelectionResultHeading">
+        <div class="card-header bg-white d-flex flex-column flex-lg-row justify-content-between gap-2">
+            <div><h3 class="h6 fw-bold mb-1" id="kmeansSelectionResultHeading">Justificación del número de clusters</h3><p class="small text-secondary mb-0">Comparación calculada antes del entrenamiento definitivo.</p></div>
+            <div><span class="badge text-bg-primary">Seleccionado: k={{ kmeans_run.cluster_count }}</span> <span class="badge text-bg-light border">Mejor silueta: k={{ kmeans_run.recommended_k_silhouette }}</span>{% if kmeans_run.recommended_k_elbow %} <span class="badge text-bg-light border">Codo: k={{ kmeans_run.recommended_k_elbow }}</span>{% endif %}</div>
+        </div>
+        <div class="card-body">
+            {% if kmeans_run.cluster_count == kmeans_run.recommended_k_silhouette %}<p class="mb-3">El entrenamiento utilizó la recomendación principal basada en silueta.</p>{% else %}<p class="mb-3">Se utilizó una selección manual distinta de la recomendación por silueta. El resultado sigue siendo válido, pero conviene documentar la razón de negocio.</p>{% endif %}
+            <div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead class="table-light"><tr><th>k</th><th class="text-end">Inercia</th><th class="text-end">Silueta</th><th class="text-end">Davies-Bouldin</th><th class="text-end">Calinski-Harabasz</th><th class="text-end">Cluster menor</th></tr></thead><tbody>{% for candidate in kmeans_run.results_by_k %}{% if candidate.k > 1 %}<tr class="{% if candidate.k == kmeans_run.cluster_count %}table-primary{% endif %}"><th>{{ candidate.k }}</th><td class="text-end">{{ candidate.inertia|floatformat:2 }}</td><td class="text-end">{{ candidate.silhouette|floatformat:4 }}</td><td class="text-end">{{ candidate.davies_bouldin|floatformat:4 }}</td><td class="text-end">{{ candidate.calinski_harabasz|floatformat:2 }}</td><td class="text-end">{{ candidate.smallest_cluster }} ({{ candidate.smallest_cluster_percentage|floatformat:1 }}%)</td></tr>{% endif %}{% endfor %}</tbody></table></div>
+        </div>
+    </section>
+    {% endif %}
 
     <section class="card mb-4" aria-labelledby="kmeansChartHeading">
         <div class="card-header bg-white">
@@ -89,7 +116,7 @@
                 <canvas id="kmeansClusterChart" aria-label="Gráfico de separación de clusters" role="img"></canvas>
             </div>
             <p class="small text-secondary text-center mb-0 mt-2">
-                Los círculos con borde negro representan los centroides. Coloca el cursor sobre un registro para consultar su asignación y distancias reales.
+                Los círculos con borde negro representan los centroides. Las distancias del detalle se calculan en el espacio estandarizado multidimensional usado por K-Means, no en las unidades originales ni solo sobre esta proyección.
             </p>
         </div>
     </section>
@@ -112,7 +139,8 @@
                         <th>Cluster</th>
                         <th class="text-end">Registros</th>
                         <th class="text-end">Porcentaje</th>
-                        <th>Característica principal</th>
+                        <th>Perfil resumido</th>
+                        <th class="text-end">Distancia media</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -121,7 +149,8 @@
                             <td><span class="badge text-bg-primary">Cluster {{ profile.cluster }}</span></td>
                             <td class="text-end">{{ profile.size }}</td>
                             <td class="text-end">{{ profile.percentage|floatformat:2 }}%</td>
-                            <td>{{ profile.characteristic }}</td>
+                            <td>{{ profile.characteristic }}{% if profile.highlights %}<div class="small text-secondary mt-1">{% for feature in profile.highlights %}{{ feature.name }} {{ feature.direction }} ({{ feature.value }} vs. {{ feature.mean }}){% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}</td>
+                            <td class="text-end">{{ profile.average_distance|floatformat:4 }}</td>
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -142,7 +171,7 @@
                     </p>
                 </div>
                 <div class="text-lg-end">
-                    <span class="small text-secondary d-block">Coincidencia general</span>
+                        <span class="small text-secondary d-block">Pureza global</span>
                     {% if kmeans_run.overall_match_percentage is not None %}
                         <span class="h4 fw-bold">{{ kmeans_run.overall_match_percentage|floatformat:2 }}%</span>
                     {% else %}
@@ -160,7 +189,7 @@
                             <th>Cluster</th>
                             <th>Cantidad de registros</th>
                             <th>Categoría predominante</th>
-                            <th>Porcentaje de coincidencia</th>
+                            <th>Pureza dentro del cluster</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -186,6 +215,18 @@
                     </tbody>
                 </table>
             </div>
+            {% if kmeans_run.external_metrics %}
+            <div class="card-body border-top">
+                <div class="row g-3 mb-3">
+                    <div class="col-6 col-lg-3"><span class="small text-secondary d-block">Adjusted Rand (ARI)</span><strong>{{ kmeans_run.external_metrics.adjusted_rand|floatformat:4 }}</strong></div>
+                    <div class="col-6 col-lg-3"><span class="small text-secondary d-block">Información mutua normalizada</span><strong>{{ kmeans_run.external_metrics.normalized_mutual_information|floatformat:4 }}</strong></div>
+                    <div class="col-6 col-lg-3"><span class="small text-secondary d-block">Homogeneidad</span><strong>{{ kmeans_run.external_metrics.homogeneity|floatformat:4 }}</strong></div>
+                    <div class="col-6 col-lg-3"><span class="small text-secondary d-block">Completitud / V-measure</span><strong>{{ kmeans_run.external_metrics.completeness|floatformat:4 }} / {{ kmeans_run.external_metrics.v_measure|floatformat:4 }}</strong></div>
+                </div>
+                {% if kmeans_contingency_rows %}<details><summary class="fw-semibold">Ver matriz de contingencia</summary><div class="table-responsive mt-2"><table class="table table-sm table-bordered text-center mb-0"><thead class="table-light"><tr><th class="text-start">Categoría</th>{% for cluster in kmeans_run.contingency_matrix.clusters %}<th>Cluster {{ cluster }}</th>{% endfor %}<th>Total</th></tr></thead><tbody>{% for row in kmeans_contingency_rows %}<tr><th class="text-start">{{ row.category }}</th>{% for value in row.values %}<td>{{ value }}</td>{% endfor %}<td class="fw-semibold">{{ row.total }}</td></tr>{% endfor %}</tbody></table></div></details>{% endif %}
+                <p class="small text-secondary mt-3 mb-0">Estas son métricas externas de acuerdo con una categoría conocida. La categoría no participó en el entrenamiento. La medida antes descrita como "Coincidencia general" se presenta correctamente como pureza global y no equivale a precisión supervisada.</p>
+            </div>
+            {% endif %}
         </section>
     {% else %}
         <section class="border rounded-3 bg-body-tertiary p-3 mb-4" aria-label="Comparación externa no configurada">
@@ -234,6 +275,20 @@
 </div>
 {% endif %}
 {% if kmeans_run %}
+<section class="card mt-4">
+    <div class="card-header bg-white"><h3 class="h6 fw-bold mb-0">Trazabilidad y reproducibilidad</h3></div>
+    <div class="card-body">
+        <div class="row g-3 small">
+            <div class="col-md-4"><span class="text-secondary d-block">Variables y orden</span>{{ kmeans_run.selected_columns|join:", " }}</div>
+            <div class="col-md-2"><span class="text-secondary d-block">Iteraciones</span>{{ kmeans_run.estimator_state.iterations }}</div>
+            <div class="col-md-2"><span class="text-secondary d-block">Duración</span>{{ kmeans_run.estimator_state.training_duration_seconds|floatformat:3 }} s</div>
+            <div class="col-md-2"><span class="text-secondary d-block">Inicialización</span>{{ kmeans_run.estimator_state.parameters.init }}</div>
+            <div class="col-md-2"><span class="text-secondary d-block">Semilla</span>{{ kmeans_run.estimator_state.parameters.random_state }}</div>
+        </div>
+        {% if kmeans_run.imputed_values %}<details class="mt-3"><summary class="fw-semibold small">Ver imputaciones realizadas</summary><ul class="small mb-0 mt-2">{% for column, info in kmeans_run.imputed_values.items %}<li>{{ column }}: {{ info.count }} valores sustituidos por la mediana {{ info.median }}</li>{% endfor %}</ul></details>{% endif %}
+    </div>
+    <p class="small mb-0 mt-2">Identidad para comparar versiones: {{ kmeans_run.change_summary.identity_method }}.</p>
+</section>
 <section class="card border-primary mt-4">
     <div class="card-body">
         {% if kmeans_run.is_saved %}

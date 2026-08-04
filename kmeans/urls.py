@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     KMeansActivateView,
+    KMeansAnalysisView,
     KMeansDeleteView,
     KMeansExportView,
     KMeansImportView,
@@ -16,6 +17,7 @@ from .views import (
 app_name = 'kmeans'
 
 urlpatterns = [
+    path('analizar-clusters/', KMeansAnalysisView.as_view(), name='analyze'),
     path('entrenar/', KMeansTrainingView.as_view(), name='train'),
     path('reiniciar/', KMeansResetView.as_view(), name='reset'),
     path('<int:pk>/exportar/', KMeansExportView.as_view(), name='export'),

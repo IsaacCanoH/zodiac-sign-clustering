@@ -230,10 +230,12 @@ def build_kmeans_results_pdf(dataset, run):
         ['Fecha de entrenamiento', run.created_at.strftime('%d/%m/%Y %H:%M')],
         [
             'Variables',
-            f'{len(run.selected_columns)} variables utilizadas en el entrenamiento.',
+            ', '.join(run.selected_columns),
         ],
         ['Filtro aplicado', run.category_label or 'Todos los registros'],
         ['Método de visualización', chart['method']],
+        ['Iteraciones', run.estimator_state.get('iterations', '-')],
+        ['Semilla', run.estimator_state.get('parameters', {}).get('random_state', '-')],
     ]
     profile_rows = [
         [f'Cluster {row["cluster"]}', row['size'], f'{row["percentage"]:.2f}%',
@@ -281,7 +283,7 @@ def build_kmeans_results_pdf(dataset, run):
                 styles['section'],
             ),
             _p(
-                'Coincidencia general: '
+                'Pureza global: '
                 + (f'{run.overall_match_percentage:.2f}%'
                    if run.overall_match_percentage is not None else 'No disponible'),
                 styles['body'],
@@ -290,6 +292,36 @@ def build_kmeans_results_pdf(dataset, run):
             _table(
                 ['Cluster', 'Categoría predominante', 'Comparados', 'Coincidencia'],
                 comparison_rows, [30 * mm, 72 * mm, 34 * mm, 38 * mm], styles,
+            ),
+            _p(
+                'La pureza describe predominancia por cluster y no equivale a '
+                'precisión de un clasificador supervisado. '
+                f'ARI: {run.external_metrics.get("adjusted_rand", "-")}; '
+                f'NMI: {run.external_metrics.get("normalized_mutual_information", "-")}; '
+                f'V-measure: {run.external_metrics.get("v_measure", "-")}.',
+                styles['body'],
+            ),
+        ])
+    if run.results_by_k:
+        diagnostic_rows = [
+            [item['k'], f'{item["inertia"]:.2f}',
+             '-' if item.get('silhouette') is None else f'{item["silhouette"]:.4f}',
+             '-' if item.get('davies_bouldin') is None else f'{item["davies_bouldin"]:.4f}']
+            for item in run.results_by_k
+        ]
+        story.extend([
+            Paragraph('6. Selección del número de clusters', styles['section']),
+            _p(
+                f'k seleccionado: {run.cluster_count}; mejor silueta: '
+                f'{run.recommended_k_silhouette or "-"}; codo: '
+                f'{run.recommended_k_elbow or "no concluyente"}.',
+                styles['body'],
+            ),
+            Spacer(1, 2 * mm),
+            _table(
+                ['k', 'Inercia', 'Silueta', 'Davies-Bouldin'],
+                diagnostic_rows, [22 * mm, 52 * mm, 50 * mm, 50 * mm], styles,
+                align_from=0,
             ),
         ])
     document.build(story, onFirstPage=_footer, onLaterPages=_footer)

@@ -11,7 +11,7 @@ from django.utils.text import slugify
 from django.views import View
 
 from datasets.models import Dataset
-from datasets.model_validation import model_compatibility
+from datasets.model_validation import dataset_fingerprint, model_compatibility
 
 from .exports import export_kmeans_run, import_kmeans_run
 from .forms import KMeansSaveForm, KMeansTrainingForm
@@ -19,6 +19,7 @@ from .models import KMeansRun
 from .pdf_reports import build_kmeans_results_pdf
 from .services import (
     KMeansTrainingError,
+    analyze_kmeans_candidates,
     build_training_setup,
     clear_kmeans_runs,
     train_kmeans,
@@ -32,6 +33,68 @@ def _dashboard_redirect(fragment, **query):
     return redirect(
         reverse('dashboard:index', query=clean_query, fragment=fragment)
     )
+
+
+def _training_form_data(request, *, cluster_count=None):
+    return {
+        'algorithm': request.POST.get('algorithm', 'kmeans'),
+        'name': request.POST.get('name', ''),
+        'topic': request.POST.get('topic', ''),
+        'description': request.POST.get('description', ''),
+        'cluster_count': cluster_count or request.POST.get('cluster_count', ''),
+        'columns': request.POST.getlist('columns'),
+        'comparison_column': request.POST.get('comparison_column', ''),
+    }
+
+
+class KMeansAnalysisView(View):
+    """Evaluate candidate values of k without persisting a trained model."""
+
+    def post(self, request):
+        dataset = Dataset.objects.filter(pk=1).first()
+        if not dataset:
+            return _dashboard_redirect('training-pane')
+        setup = build_training_setup(
+            dataset, request.POST.get('category'), request.POST.get('category_column')
+        )
+        form = KMeansTrainingForm(
+            request.POST, numeric_columns=setup['numeric_columns'],
+            categorical_columns=setup['categorical_columns'],
+            max_clusters=max(setup['max_clusters'], 2),
+        )
+        if not form.is_valid():
+            request.session['kmeans_form_state'] = {
+                'data': _training_form_data(request),
+                'errors': form.errors.get_json_data(),
+            }
+            return _dashboard_redirect(
+                'training-pane', category=request.POST.get('category')
+            )
+        try:
+            analysis = analyze_kmeans_candidates(
+                dataset, form.cleaned_data['columns'],
+                request.POST.get('category'), request.POST.get('category_column'),
+            )
+        except KMeansTrainingError as error:
+            request.session['kmeans_form_state'] = {
+                'data': _training_form_data(request),
+                'errors': {'__all__': [{'message': str(error), 'code': ''}]},
+            }
+            return _dashboard_redirect(
+                'training-pane', category=request.POST.get('category')
+            )
+        analysis['dataset_fingerprint'] = dataset_fingerprint(dataset)
+        analysis['comparison_column'] = form.cleaned_data['comparison_column']
+        request.session['kmeans_analysis_state'] = analysis
+        request.session['kmeans_form_state'] = {
+            'data': _training_form_data(
+                request, cluster_count=analysis['recommended_k']
+            ),
+            'errors': {},
+        }
+        return _dashboard_redirect(
+            'training-pane', category=request.POST.get('category')
+        )
 
 
 class KMeansTrainingView(View):
@@ -74,6 +137,14 @@ class KMeansTrainingView(View):
             )
 
         try:
+            analysis = request.session.get('kmeans_analysis_state')
+            if analysis and (
+                analysis.get('dataset_fingerprint') != dataset_fingerprint(dataset)
+                or analysis.get('selected_columns') != form.cleaned_data['columns']
+                or analysis.get('category_filter') != setup.get('training_category', '')
+                or analysis.get('category_column') != (setup.get('category_column') or '')
+            ):
+                analysis = None
             train_kmeans(
                 dataset=dataset,
                 selected_columns=form.cleaned_data['columns'],
@@ -85,6 +156,7 @@ class KMeansTrainingView(View):
                 topic=form.cleaned_data['topic'],
                 description=form.cleaned_data['description'],
                 save_immediately=False,
+                candidate_analysis=analysis,
             )
         except KMeansTrainingError as error:
             request.session['kmeans_form_state'] = {
@@ -106,6 +178,7 @@ class KMeansTrainingView(View):
                 category=request.POST.get('category'),
             )
 
+        request.session.pop('kmeans_analysis_state', None)
         return _dashboard_redirect('results-pane', results_view='kmeans')
 
 
@@ -115,6 +188,7 @@ class KMeansResetView(View):
         if dataset:
             clear_kmeans_runs(dataset)
         request.session.pop('kmeans_form_state', None)
+        request.session.pop('kmeans_analysis_state', None)
         return _dashboard_redirect('training-pane')
 
 

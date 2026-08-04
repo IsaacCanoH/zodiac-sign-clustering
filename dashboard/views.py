@@ -5,9 +5,7 @@ from classified_data.components import build_classified_workspace_context
 from datasets.model_validation import model_compatibility
 from descriptive_statistics.components import build_statistics_workspace_context
 from kmeans.components import build_kmeans_workspace_context
-from hierarchical.components import build_hierarchical_workspace_context
 from kmeans.models import KMeansRun
-from hierarchical.models import HierarchicalRun
 
 
 class DashboardView(TemplateView):
@@ -27,11 +25,6 @@ class DashboardView(TemplateView):
             )
         )
         context.update(
-            build_hierarchical_workspace_context(
-                self.request, context.get('dataset')
-            )
-        )
-        context.update(
             build_classified_workspace_context(
                 self.request,
                 context.get('dataset'),
@@ -43,9 +36,6 @@ class DashboardView(TemplateView):
         # Saved models form an independent catalogue. They must remain visible
         # even when their source dataset is removed or replaced.
         context['all_kmeans_runs'] = list(KMeansRun.objects.filter(is_saved=True))
-        context['all_hierarchical_runs'] = list(
-            HierarchicalRun.objects.filter(is_saved=True)
-        )
 
         requested_category = context.get('selected_category', '')
         requested_category_column = context.get('category_column', '')
@@ -65,18 +55,6 @@ class DashboardView(TemplateView):
                     }
                     for run in context['all_kmeans_runs']
                 ],
-                *[
-                    {
-                        'algorithm': 'hierarchical',
-                        'run': run,
-                        **model_compatibility(
-                            dataset, run,
-                            requested_category=requested_category,
-                            requested_category_column=requested_category_column,
-                        ),
-                    }
-                    for run in context['all_hierarchical_runs']
-                ],
             ],
             key=lambda item: item['run'].created_at,
             reverse=True,
@@ -91,23 +69,6 @@ class DashboardView(TemplateView):
             'model_action_error',
             None,
         )
-        requested_results_view = self.request.GET.get('results_view')
-        context['results_view'] = (
-            requested_results_view
-            if requested_results_view in {'kmeans', 'hierarchical'}
-            else 'kmeans'
-        )
-        available_results = [
-            algorithm
-            for algorithm, run_key in (
-                ('kmeans', 'kmeans_run'),
-                ('hierarchical', 'hierarchical_run'),
-            )
-            if context.get(run_key)
-        ]
-        context['ui_active_algorithm'] = (
-            context['results_view']
-            if context['results_view'] in available_results
-            else (available_results[0] if available_results else 'kmeans')
-        )
+        context['results_view'] = 'kmeans'
+        context['ui_active_algorithm'] = 'kmeans'
         return context

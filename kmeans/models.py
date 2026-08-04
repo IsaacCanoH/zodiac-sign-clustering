@@ -57,6 +57,17 @@ class KMeansRun(models.Model):
     estimator_state = models.JSONField(default=dict)
     library_versions = models.JSONField(default=dict)
     change_summary = models.JSONField(default=dict)
+    results_by_k = models.JSONField(default=list)
+    recommended_k_silhouette = models.PositiveSmallIntegerField(
+        null=True, blank=True
+    )
+    recommended_k_elbow = models.PositiveSmallIntegerField(null=True, blank=True)
+    selected_k = models.PositiveSmallIntegerField(null=True, blank=True)
+    external_metrics = models.JSONField(default=dict)
+    contingency_matrix = models.JSONField(default=dict)
+    cluster_category_association = models.JSONField(default=list)
+    quality_warnings = models.JSONField(default=list)
+    stability_metrics = models.JSONField(default=dict)
     is_saved = models.BooleanField(default=True, db_index=True)
     saved_at = models.DateTimeField(null=True, blank=True)
 

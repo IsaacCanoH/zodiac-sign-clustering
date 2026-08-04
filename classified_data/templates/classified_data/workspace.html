@@ -3,28 +3,11 @@
     <div>
         <h2 class="h5 fw-bold mb-1">Datos clasificados</h2>
         <p class="text-secondary mb-0">
-            Consulta los registros realmente analizados y el cluster asignado por cada algoritmo.
+            Consulta los registros realmente analizados y el cluster asignado por K-Means.
         </p>
     </div>
     {% if classified_run %}
         <div class="d-flex flex-wrap gap-2 align-items-center">
-            <div class="dropdown">
-                <button class="btn btn-outline-secondary dropdown-toggle" type="button"
-                    data-bs-toggle="dropdown" aria-expanded="false">
-                    Algoritmo: {{ classified_algorithm_label }}
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end">
-                    {% for option in classified_available_algorithms %}
-                        <li>
-                            <a class="dropdown-item{% if option.value == classified_algorithm %} active{% endif %}"
-                                href="?classified_algorithm={{ option.value }}#classified-pane">
-                                {{ option.label }}
-                            </a>
-                        </li>
-                    {% endfor %}
-                </ul>
-            </div>
-
             <div class="dropdown">
                 <button class="btn btn-outline-secondary dropdown-toggle" type="button"
                     data-bs-toggle="dropdown" aria-expanded="false">
@@ -72,7 +55,7 @@
     <div class="border rounded-3 bg-body-tertiary text-center p-5">
         <h3 class="h6 fw-bold">Todavía no existen datos clasificados</h3>
         <p class="text-secondary mb-3">
-            Ejecuta un entrenamiento de K-Means o clustering jerárquico para consultar aquí las filas analizadas y su cluster.
+            Ejecuta un entrenamiento de K-Means para consultar aquí las filas analizadas y su cluster.
         </p>
         {% if not dataset %}
             <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#loadDataModal">

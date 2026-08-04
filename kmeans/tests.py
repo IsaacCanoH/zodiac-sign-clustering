@@ -11,9 +11,11 @@ from .exports import export_kmeans_run, import_kmeans_run
 from .models import KMeansRun
 from .services import (
     KMeansTrainingError,
+    analyze_kmeans_candidates,
     build_results_context,
     detect_categorical_columns,
     detect_numeric_columns,
+    predict_kmeans,
     train_kmeans,
 )
 
@@ -67,6 +69,20 @@ class KMeansRetrainingTests(TestCase):
         self.assertEqual(child.new_record_count, 2)
         self.assertEqual(child.estimator_state['parameters']['init'], 'previous_centroids')
         self.assertEqual(child.change_summary['current_sample_count'], 6)
+
+    def test_retraining_compares_reordered_rows_by_stable_identity(self):
+        parent = train_kmeans(self.dataset, ['x', 'y'], 2, 'agua')
+        self.dataset.records = list(reversed(self.dataset.records))
+        self.dataset.save(update_fields=['records'])
+
+        child = train_kmeans(
+            self.dataset, ['x', 'y'], 2, 'agua', parent_run=parent
+        )
+
+        self.assertEqual(child.change_summary['new_record_count'], 0)
+        self.assertEqual(child.change_summary['shared_record_count'], 4)
+        self.assertEqual(child.change_summary['changed_cluster_count'], 0)
+        self.assertIn('Huella', child.change_summary['identity_method'])
 
     def test_draft_is_hidden_until_user_saves_it(self):
         run = train_kmeans(
@@ -134,6 +150,59 @@ class KMeansRetrainingTests(TestCase):
 
 
 class KMeansServiceTests(TestCase):
+    def test_assisted_selection_compares_candidates_and_recommends_two_blobs(self):
+        dataset = self.create_dataset(
+            ['x', 'y'],
+            [
+                {'x': '0', 'y': '0'}, {'x': '0.1', 'y': '0.2'},
+                {'x': '-0.1', 'y': '0.1'}, {'x': '10', 'y': '10'},
+                {'x': '10.1', 'y': '9.9'}, {'x': '9.8', 'y': '10.2'},
+            ],
+        )
+
+        analysis = analyze_kmeans_candidates(dataset, ['x', 'y'])
+
+        self.assertEqual(analysis['recommended_k_silhouette'], 2)
+        self.assertEqual(analysis['results'][0]['k'], 1)
+        self.assertIn('davies_bouldin', analysis['results'][1])
+        self.assertIn('calinski_harabasz', analysis['results'][1])
+
+    def test_saved_preprocessing_predicts_training_rows_and_future_missing_value(self):
+        dataset = self.create_dataset(
+            ['x', 'y'],
+            [
+                {'x': '0', 'y': '0'}, {'x': '0.2', 'y': '0.1'},
+                {'x': '9.8', 'y': '10'}, {'x': '10', 'y': '9.9'},
+            ],
+        )
+        run = train_kmeans(dataset, ['x', 'y'], 2)
+
+        predictions = predict_kmeans(run, dataset.records)
+        future = predict_kmeans(run, [{'x': '', 'y': '0'}])
+
+        self.assertEqual(
+            [item['cluster'] for item in predictions],
+            [item['cluster'] for item in run.assignments],
+        )
+        self.assertIn('x', run.preprocessing_state['fill_values'])
+        self.assertIn(future[0]['cluster'], {1, 2})
+
+    def test_external_evaluation_uses_permutation_invariant_metrics(self):
+        dataset = self.create_dataset(
+            ['x', 'Grupo'],
+            [
+                {'x': '0', 'Grupo': 'A'}, {'x': '0.1', 'Grupo': 'A'},
+                {'x': '10', 'Grupo': 'B'}, {'x': '10.1', 'Grupo': 'B'},
+            ],
+        )
+
+        run = train_kmeans(dataset, ['x'], 2, comparison_column='Grupo')
+
+        self.assertEqual(run.external_metrics['adjusted_rand'], 1.0)
+        self.assertEqual(run.external_metrics['normalized_mutual_information'], 1.0)
+        self.assertEqual(run.external_metrics['purity'], 100.0)
+        self.assertEqual(run.contingency_matrix['categories'], ['A', 'B'])
+
     def test_detects_only_useful_numeric_columns(self):
         dataset = self.create_dataset(
             ['ID', 'Edad', 'Puntaje', 'Nombre', 'Constante'],
@@ -507,6 +576,22 @@ class KMeansServiceTests(TestCase):
 
 
 class KMeansViewTests(TestCase):
+    def test_assisted_selection_is_displayed_before_definitive_training(self):
+        self.create_dataset()
+        response = self.client.post(
+            reverse('kmeans:analyze'),
+            {
+                'algorithm': 'kmeans', 'cluster_count': 2,
+                'columns': ['Edad', 'Puntaje'],
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Selección asistida del número de clusters')
+        self.assertContains(response, 'Todavía no se ha guardado ningún modelo')
+        self.assertFalse(KMeansRun.objects.exists())
+
     def test_training_tab_requires_a_dataset(self):
         response = self.client.get(reverse('dashboard:index'))
 
@@ -712,6 +797,13 @@ class KMeansImportValidationTests(TestCase):
 
         self.assertEqual(imported.assignments, self.payload['assignments'])
         self.assertEqual(build_results_context(self.dataset)['kmeans_run'], imported)
+        self.assertEqual(
+            [item['cluster'] for item in predict_kmeans(imported, self.dataset.records)],
+            [item['cluster'] for item in imported.assignments],
+        )
+        self.assertEqual(
+            imported.estimator_state['trained_at'], self.payload['trained_at']
+        )
 
     def test_import_rejects_different_dataset(self):
         self.dataset.records[0]['x'] = '999'

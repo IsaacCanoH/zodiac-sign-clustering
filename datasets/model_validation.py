@@ -128,14 +128,18 @@ def model_compatibility(
 
 
 def build_change_summary(parent, assignments, sample_count, metrics):
-    old = {item['row_number']: item['cluster'] for item in parent.assignments}
-    new = {item['row_number']: item['cluster'] for item in assignments}
+    has_stable_identity = all(
+        item.get('row_identity') for item in [*parent.assignments, *assignments]
+    )
+    identity_field = 'row_identity' if has_stable_identity else 'row_number'
+    old = {item[identity_field]: item['cluster'] for item in parent.assignments}
+    new = {item[identity_field]: item['cluster'] for item in assignments}
     shared = sorted(set(old) & set(new))
     changed = sum(old[row] != new[row] for row in shared)
     return {
         'previous_sample_count': parent.sample_count,
         'current_sample_count': sample_count,
-        'new_record_count': max(0, sample_count - parent.sample_count),
+        'new_record_count': len(set(new) - set(old)),
         'shared_record_count': len(shared),
         'changed_cluster_count': changed,
         'changed_cluster_percentage': (
@@ -143,6 +147,10 @@ def build_change_summary(parent, assignments, sample_count, metrics):
         ),
         'previous_metrics': metrics['previous'],
         'current_metrics': metrics['current'],
+        'identity_method': (
+            'Huella de variables de entrenamiento' if has_stable_identity
+            else 'Número de fila (modelo anterior sin identidad estable)'
+        ),
     }
 
 

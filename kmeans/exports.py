@@ -59,6 +59,18 @@ def export_kmeans_run(run):
         'estimator_state': run.estimator_state,
         'library_versions': run.library_versions,
         'change_summary': run.change_summary,
+        'trained_at': run.estimator_state.get(
+            'trained_at', run.created_at.isoformat()
+        ),
+        'results_by_k': run.results_by_k,
+        'recommended_k_silhouette': run.recommended_k_silhouette,
+        'recommended_k_elbow': run.recommended_k_elbow,
+        'selected_k': run.selected_k,
+        'external_metrics': run.external_metrics,
+        'contingency_matrix': run.contingency_matrix,
+        'cluster_category_association': run.cluster_category_association,
+        'quality_warnings': run.quality_warnings,
+        'stability_metrics': run.stability_metrics,
     }
 
 
@@ -120,6 +132,12 @@ def import_kmeans_run(dataset, data, *, allow_compatible=False):
     if silhouette_sample_count > sample_count:
         raise ValueError('La muestra de silueta supera los registros del modelo.')
     validate_optional_metadata(dataset, data, selected_columns)
+    estimator_state = require_mapping(
+        data.get('estimator_state', {}),
+        'El estado del estimador debe ser un objeto.',
+    ).copy()
+    if data.get('trained_at'):
+        estimator_state['trained_at'] = data['trained_at']
 
     with transaction.atomic():
         return KMeansRun.objects.create(
@@ -169,10 +187,7 @@ def import_kmeans_run(dataset, data, *, allow_compatible=False):
                 data.get('preprocessing_state', {}),
                 'El estado de preprocesamiento debe ser un objeto.',
             ),
-            estimator_state=require_mapping(
-                data.get('estimator_state', {}),
-                'El estado del estimador debe ser un objeto.',
-            ),
+            estimator_state=estimator_state,
             library_versions=require_mapping(
                 data.get('library_versions', {}),
                 'Las versiones deben ser un objeto.',
@@ -180,6 +195,29 @@ def import_kmeans_run(dataset, data, *, allow_compatible=False):
             change_summary=require_mapping(
                 data.get('change_summary', {}),
                 'El resumen de cambios debe ser un objeto.',
+            ),
+            results_by_k=require_list(data.get('results_by_k', []), 'results_by_k'),
+            recommended_k_silhouette=data.get('recommended_k_silhouette'),
+            recommended_k_elbow=data.get('recommended_k_elbow'),
+            selected_k=data.get('selected_k', cluster_count),
+            external_metrics=require_mapping(
+                data.get('external_metrics', {}),
+                'Las métricas externas deben ser un objeto.',
+            ),
+            contingency_matrix=require_mapping(
+                data.get('contingency_matrix', {}),
+                'La matriz de contingencia debe ser un objeto.',
+            ),
+            cluster_category_association=require_list(
+                data.get('cluster_category_association', []),
+                'cluster_category_association',
+            ),
+            quality_warnings=require_list(
+                data.get('quality_warnings', []), 'quality_warnings'
+            ),
+            stability_metrics=require_mapping(
+                data.get('stability_metrics', {}),
+                'Las métricas de estabilidad deben ser un objeto.',
             ),
             is_saved=True,
             saved_at=timezone.now(),

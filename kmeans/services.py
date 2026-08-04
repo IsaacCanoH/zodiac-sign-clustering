@@ -1,16 +1,27 @@
 import math
 import statistics
+import time
 import unicodedata
+import hashlib
+import json
 from collections import Counter
 from decimal import Decimal
 
 import numpy as np
 import sklearn
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.utils import timezone
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
-from sklearn.metrics import silhouette_score
+from sklearn.metrics import (
+    adjusted_rand_score,
+    calinski_harabasz_score,
+    davies_bouldin_score,
+    homogeneity_completeness_v_measure,
+    normalized_mutual_info_score,
+    silhouette_score,
+)
 from sklearn.preprocessing import StandardScaler
 
 from datasets.equivalences import canonical_number
@@ -197,6 +208,7 @@ def _build_matrix(rows, selected_columns):
         )
 
     imputed_values = {}
+    fill_values = {}
     for column_index, column in enumerate(selected_columns):
         available = [
             row[column_index]
@@ -208,6 +220,7 @@ def _build_matrix(rows, selected_columns):
                 f'La columna “{column}” no contiene valores numéricos válidos.'
             )
         median = float(statistics.median(available))
+        fill_values[column] = median
         missing_count = 0
         for row in matrix:
             if row[column_index] is None:
@@ -218,7 +231,138 @@ def _build_matrix(rows, selected_columns):
                 'count': missing_count,
                 'median': round(median, 6),
             }
-    return np.asarray(matrix, dtype=float), imputed_values
+    return np.asarray(matrix, dtype=float), imputed_values, fill_values
+
+
+def _fit_estimator(matrix, cluster_count, *, init='k-means++', n_init=10):
+    return KMeans(
+        n_clusters=cluster_count,
+        init=init,
+        n_init=n_init,
+        max_iter=300,
+        random_state=RANDOM_STATE,
+        algorithm='lloyd',
+    ).fit(matrix)
+
+
+def _elbow_candidate(results):
+    """Find the point furthest from the line joining the inertia endpoints."""
+    if len(results) < 3:
+        return None
+    points = np.asarray([[item['k'], item['inertia']] for item in results], dtype=float)
+    ranges = points.max(axis=0) - points.min(axis=0)
+    if np.any(ranges == 0):
+        return None
+    points = (points - points.min(axis=0)) / ranges
+    start, end = points[0], points[-1]
+    direction = end - start
+    length = float(np.linalg.norm(direction))
+    if length == 0:
+        return None
+    offsets = points - start
+    distances = np.abs(
+        direction[0] * offsets[:, 1] - direction[1] * offsets[:, 0]
+    ) / length
+    index = int(np.argmax(distances[1:-1])) + 1
+    if distances[index] <= 0:
+        return None
+    return int(results[index]['k'])
+
+
+def analyze_kmeans_candidates(
+    dataset, selected_columns, requested_category=None,
+    requested_category_column=None, max_k=None,
+):
+    """Evaluate temporary K-Means candidates before the definitive training."""
+    category_filter, rows = _filtered_rows(
+        dataset, requested_category, requested_category_column
+    )
+    records = [record for _, record in rows]
+    allowed = {item['name'] for item in detect_numeric_columns(dataset, records)}
+    selected_columns = list(dict.fromkeys(selected_columns))
+    if not selected_columns or any(column not in allowed for column in selected_columns):
+        raise KMeansTrainingError('Selecciona variables numéricas compatibles.')
+    matrix, imputed_values, _ = _build_matrix(rows, selected_columns)
+    distinct_count = len(np.unique(matrix, axis=0))
+    candidate_max = min(
+        int(max_k or MAX_CLUSTERS), MAX_CLUSTERS,
+        len(rows) - 1, distinct_count,
+    )
+    if candidate_max < MIN_CLUSTERS:
+        raise KMeansTrainingError(
+            'No existen suficientes registros distintos para comparar clusters.'
+        )
+    scaled = StandardScaler().fit_transform(matrix)
+    results = []
+    for k in range(1, candidate_max + 1):
+        estimator = _fit_estimator(scaled, k)
+        labels = estimator.labels_
+        sizes = np.bincount(labels, minlength=k)
+        row = {
+            'k': k,
+            'inertia': round(float(estimator.inertia_), 6),
+            'silhouette': None,
+            'davies_bouldin': None,
+            'calinski_harabasz': None,
+            'smallest_cluster': int(sizes.min()),
+            'smallest_cluster_percentage': round(float(sizes.min() * 100 / len(rows)), 2),
+            'iterations': int(estimator.n_iter_),
+            'warnings': [],
+        }
+        if k >= 2:
+            sample_size = min(len(rows), MAX_SILHOUETTE_SAMPLES)
+            row['silhouette'] = round(float(silhouette_score(
+                scaled, labels,
+                sample_size=sample_size if sample_size < len(rows) else None,
+                random_state=RANDOM_STATE,
+            )), 6)
+            row['davies_bouldin'] = round(float(davies_bouldin_score(scaled, labels)), 6)
+            row['calinski_harabasz'] = round(
+                float(calinski_harabasz_score(scaled, labels)), 6
+            )
+            if row['smallest_cluster_percentage'] < 2:
+                row['warnings'].append('Cluster menor al 2% de los registros.')
+            if row['silhouette'] < 0.25:
+                row['warnings'].append('Separación interna baja.')
+        results.append(row)
+    eligible = [item for item in results if item['k'] >= 2]
+    best_silhouette = max(item['silhouette'] for item in eligible)
+    recommended_silhouette = min(
+        item['k'] for item in eligible
+        if item['silhouette'] >= best_silhouette - 0.01
+    )
+    recommended_elbow = _elbow_candidate(results)
+    agreement = recommended_elbow == recommended_silhouette
+    if best_silhouette >= 0.5 and agreement:
+        confidence = 'Alta'
+    elif best_silhouette >= 0.25:
+        confidence = 'Moderada'
+    else:
+        confidence = 'Baja'
+    explanation = (
+        f'La mejor separación corresponde a k={recommended_silhouette} '
+        f'(silueta {best_silhouette:.4f}).'
+    )
+    if recommended_elbow:
+        explanation += f' El método del codo sugiere k={recommended_elbow}.'
+    if not agreement and recommended_elbow:
+        explanation += ' Los criterios no coinciden; conviene revisar ambas alternativas.'
+    if best_silhouette < 0.25:
+        explanation += ' La estructura encontrada es débil y K-Means puede no ser adecuado.'
+    return {
+        'selected_columns': selected_columns,
+        'sample_count': len(rows),
+        'feature_count': len(selected_columns),
+        'results': results,
+        'recommended_k_silhouette': recommended_silhouette,
+        'recommended_k_elbow': recommended_elbow,
+        'recommended_k': recommended_silhouette,
+        'confidence': confidence,
+        'explanation': explanation,
+        'imputed_values': imputed_values,
+        'category_filter': category_filter['selected_category'],
+        'category_column': category_filter['category_column'] or '',
+    }
 
 
 def _stable_cluster_labels(labels, centers):
@@ -304,6 +448,7 @@ def _comparison_summary(rows, labels, comparison_column, cluster_count):
     }
 
 
+@transaction.atomic
 def train_kmeans(
     dataset,
     selected_columns,
@@ -316,7 +461,9 @@ def train_kmeans(
     description='',
     parent_run=None,
     save_immediately=True,
+    candidate_analysis=None,
 ):
+    started_at = time.perf_counter()
     category_filter, rows = _filtered_rows(
         dataset, requested_category, requested_category_column
     )
@@ -351,7 +498,7 @@ def train_kmeans(
             'La cantidad de grupos debe ser menor que la cantidad de registros.'
         )
 
-    matrix, imputed_values = _build_matrix(rows, selected_columns)
+    matrix, imputed_values, fill_values = _build_matrix(rows, selected_columns)
     if len(np.unique(matrix, axis=0)) < cluster_count:
         raise KMeansTrainingError(
             'No existen suficientes combinaciones diferentes para formar '
@@ -383,15 +530,42 @@ def train_kmeans(
         **estimator_options,
     )
     labels = estimator.fit_predict(scaled_matrix)
+    if parent_run is not None:
+        fresh_estimator = _fit_estimator(scaled_matrix, cluster_count)
+        if fresh_estimator.inertia_ < estimator.inertia_ - 1e-9:
+            estimator = fresh_estimator
+            labels = estimator.labels_
+            estimator_options['init'] = 'k-means++_selected_over_previous'
+            estimator_options['n_init'] = 10
     original_centers = scaler.inverse_transform(estimator.cluster_centers_)
     labels, original_centers = _stable_cluster_labels(labels, original_centers)
 
     assignments = []
-    for (row_number, _), cluster in zip(rows, labels, strict=True):
+    identity_column = next((
+        column for column in dataset.columns
+        if _is_identifier(column)
+        and all(not _is_null(record.get(column, '')) for _, record in rows)
+        and len({str(record.get(column, '')).strip() for _, record in rows}) == len(rows)
+    ), None)
+    identity_occurrences = Counter()
+    for (row_number, record), cluster in zip(rows, labels, strict=True):
+        identity_payload = (
+            {identity_column: str(record.get(identity_column, '')).strip()}
+            if identity_column else {
+                column: str(record.get(column, '')).strip()
+                for column in selected_columns
+            }
+        )
+        fingerprint = hashlib.sha256(json.dumps(
+            identity_payload, ensure_ascii=False, sort_keys=True,
+            separators=(',', ':'),
+        ).encode('utf-8')).hexdigest()
+        identity_occurrences[fingerprint] += 1
         assignments.append(
             {
                 'row_number': row_number,
                 'cluster': cluster,
+                'row_identity': f'{fingerprint}:{identity_occurrences[fingerprint]}',
             }
         )
 
@@ -402,7 +576,7 @@ def train_kmeans(
     centroids = [
         {
             'cluster': cluster,
-            'values': [round(float(value), 6) for value in center],
+            'values': [float(value) for value in center],
         }
         for cluster, center in enumerate(original_centers, start=1)
     ]
@@ -432,6 +606,92 @@ def train_kmeans(
             'overall_match_percentage': None,
         }
     )
+
+    external_metrics = {}
+    contingency = {}
+    if comparison_column and comparison['valid_count']:
+        true_values = []
+        predicted_values = []
+        display_labels = {}
+        for (_, record), cluster in zip(rows, labels, strict=True):
+            raw_value = record.get(comparison_column, '')
+            if _is_null(raw_value):
+                continue
+            normalized = str(raw_value).strip().casefold()
+            display_labels.setdefault(normalized, str(raw_value).strip())
+            true_values.append(normalized)
+            predicted_values.append(cluster)
+        homogeneity, completeness, v_measure = homogeneity_completeness_v_measure(
+            true_values, predicted_values
+        )
+        external_metrics = {
+            'purity': comparison['overall_match_percentage'],
+            'adjusted_rand': round(float(adjusted_rand_score(
+                true_values, predicted_values
+            )), 6),
+            'normalized_mutual_information': round(float(
+                normalized_mutual_info_score(true_values, predicted_values)
+            ), 6),
+            'homogeneity': round(float(homogeneity), 6),
+            'completeness': round(float(completeness), 6),
+            'v_measure': round(float(v_measure), 6),
+        }
+        categories = sorted(set(true_values), key=lambda item: display_labels[item].casefold())
+        matrix_values = [
+            [sum(
+                truth == category and prediction == cluster
+                for truth, prediction in zip(true_values, predicted_values, strict=True)
+            ) for cluster in range(1, cluster_count + 1)]
+            for category in categories
+        ]
+        contingency = {
+            'categories': [display_labels[item] for item in categories],
+            'clusters': list(range(1, cluster_count + 1)),
+            'values': matrix_values,
+        }
+
+    quality_warnings = []
+    smallest = min(cluster_sizes.values())
+    if smallest * 100 / len(rows) < 2:
+        quality_warnings.append({
+            'code': 'small_cluster', 'level': 'warning',
+            'message': 'Al menos un cluster contiene menos del 2% de los registros.',
+        })
+    missing_total = sum(item['count'] for item in imputed_values.values())
+    if missing_total and missing_total / matrix.size >= 0.1:
+        quality_warnings.append({
+            'code': 'high_imputation', 'level': 'warning',
+            'message': 'Se imputó al menos el 10% de los valores utilizados.',
+        })
+    if score is not None and score < 0.25:
+        quality_warnings.append({
+            'code': 'weak_structure', 'level': 'danger',
+            'message': 'La silueta indica una estructura de clusters poco definida.',
+        })
+    if estimator.n_iter_ >= estimator_options['max_iter']:
+        quality_warnings.append({
+            'code': 'iteration_limit', 'level': 'warning',
+            'message': 'El entrenamiento alcanzó el límite de iteraciones.',
+        })
+
+    stability_scores = []
+    for seed in (7, 19, 31, 53, 71):
+        repeated = KMeans(
+            n_clusters=cluster_count, init='k-means++', n_init=1,
+            max_iter=300, random_state=seed, algorithm='lloyd',
+        ).fit_predict(scaled_matrix)
+        stability_scores.append(float(adjusted_rand_score(estimator.labels_, repeated)))
+    stability_metrics = {
+        'method': 'ARI frente a 5 inicializaciones independientes',
+        'runs': len(stability_scores),
+        'mean_adjusted_rand': round(float(np.mean(stability_scores)), 6),
+        'minimum_adjusted_rand': round(float(np.min(stability_scores)), 6),
+    }
+    if stability_metrics['mean_adjusted_rand'] < 0.8:
+        quality_warnings.append({
+            'code': 'unstable_solution', 'level': 'warning',
+            'message': 'La agrupación cambia de forma relevante entre inicializaciones.',
+        })
 
     change_summary = {}
     if parent_run:
@@ -496,19 +756,49 @@ def train_kmeans(
             'scale': scaler.scale_.tolist(),
             'variance': scaler.var_.tolist(),
             'imputed_values': imputed_values,
+            'fill_values': fill_values,
+            'feature_order': selected_columns,
         },
         estimator_state={
-            'normalized_centroids': estimator.cluster_centers_.tolist(),
+            'trained_at': timezone.now().isoformat(),
+            'normalized_centroids': scaler.transform(
+                np.asarray(original_centers, dtype=float)
+            ).tolist(),
             'iterations': int(estimator.n_iter_),
+            'internal_metrics': {
+                'silhouette': score,
+                'davies_bouldin': float(davies_bouldin_score(
+                    scaled_matrix, estimator.labels_
+                )),
+                'calinski_harabasz': float(calinski_harabasz_score(
+                    scaled_matrix, estimator.labels_
+                )),
+            },
             'parameters': {
                 'cluster_count': cluster_count, 'init': (
-                    'previous_centroids' if parent_run else 'k-means++'
+                    'previous_centroids'
+                    if parent_run and not isinstance(estimator_options['init'], str)
+                    else estimator_options['init']
                 ), 'n_init': estimator_options['n_init'],
-                'max_iter': 300, 'random_state': RANDOM_STATE,
+                'max_iter': 300, 'tol': float(estimator.tol),
+                'algorithm': 'lloyd', 'random_state': RANDOM_STATE,
             },
+            'training_duration_seconds': round(time.perf_counter() - started_at, 6),
+            'row_identity_source': identity_column or 'training_feature_fingerprint',
         },
         library_versions={'scikit_learn': sklearn.__version__, 'numpy': np.__version__},
         change_summary=change_summary,
+        results_by_k=(candidate_analysis or {}).get('results', []),
+        recommended_k_silhouette=(candidate_analysis or {}).get(
+            'recommended_k_silhouette'
+        ),
+        recommended_k_elbow=(candidate_analysis or {}).get('recommended_k_elbow'),
+        selected_k=cluster_count,
+        external_metrics=external_metrics,
+        contingency_matrix=contingency,
+        cluster_category_association=comparison['summaries'],
+        quality_warnings=quality_warnings,
+        stability_metrics=stability_metrics,
         is_saved=save_immediately,
         saved_at=(timezone.now() if save_immediately else None),
     )
@@ -520,6 +810,56 @@ def clear_kmeans_runs(dataset):
         dataset_fingerprint=dataset_fingerprint(dataset),
         is_saved=False,
     ).delete()
+
+
+def predict_kmeans(run, records):
+    """Apply a saved fitted model without recalculating its preprocessing."""
+    state = run.preprocessing_state or {}
+    means = np.asarray(state.get('mean', []), dtype=float)
+    scales = np.asarray(state.get('scale', []), dtype=float)
+    fill_values = state.get('fill_values', {})
+    centers = np.asarray(
+        (run.estimator_state or {}).get('normalized_centroids', []), dtype=float
+    )
+    feature_count = len(run.selected_columns)
+    if (
+        means.shape != (feature_count,) or scales.shape != (feature_count,)
+        or centers.shape != (run.cluster_count, feature_count)
+    ):
+        raise KMeansTrainingError(
+            'El modelo no contiene un estado de preprocesamiento reutilizable.'
+        )
+    matrix = []
+    for record in records:
+        row = []
+        for column in run.selected_columns:
+            try:
+                value = _as_number(record.get(column, ''))
+            except ValueError:
+                raise KMeansTrainingError(
+                    f'La columna "{column}" contiene un valor no numérico.'
+                ) from None
+            if value is None:
+                if column not in fill_values:
+                    raise KMeansTrainingError(
+                        f'El modelo no contiene una mediana para "{column}".'
+                    )
+                value = float(fill_values[column])
+            row.append(value)
+        matrix.append(row)
+    safe_scales = np.where(scales == 0, 1.0, scales)
+    normalized = (np.asarray(matrix, dtype=float) - means) / safe_scales
+    distances = np.linalg.norm(
+        normalized[:, np.newaxis, :] - centers[np.newaxis, :, :], axis=2
+    )
+    labels = np.argmin(distances, axis=1)
+    return [
+        {
+            'cluster': int(label) + 1,
+            'distance': round(float(distances[index, label]), 6),
+        }
+        for index, label in enumerate(labels)
+    ]
 
 
 def _silhouette_interpretation(score):
@@ -568,7 +908,7 @@ def _result_matrix(dataset, run):
         )
         for assignment in run.assignments
     ]
-    matrix, _ = _build_matrix(rows, run.selected_columns)
+    matrix, _, _ = _build_matrix(rows, run.selected_columns)
     return matrix
 
 
@@ -596,12 +936,47 @@ def _cluster_profiles(run, matrix):
                 f'{means[feature_index]:.2f})'
             )
         size = int(run.cluster_sizes.get(str(centroid['cluster']), 0))
+        ranked_features = sorted(
+            range(len(values)),
+            key=lambda index: abs(comparable_deviations[index]),
+            reverse=True,
+        )[:3]
+        highlights = []
+        for index in ranked_features:
+            deviation = comparable_deviations[index]
+            if abs(deviation) < 0.25:
+                continue
+            highlights.append({
+                'name': run.selected_columns[index],
+                'direction': 'por encima' if deviation > 0 else 'por debajo',
+                'value': round(float(values[index]), 4),
+                'mean': round(float(means[index]), 4),
+            })
+        member_indices = [
+            index for index, assignment in enumerate(run.assignments)
+            if assignment['cluster'] == centroid['cluster']
+        ]
+        preprocessing = run.preprocessing_state or {}
+        scales = np.asarray(preprocessing.get('scale', deviations), dtype=float)
+        safe_scales = np.where(scales == 0, 1.0, scales)
+        member_distances = np.linalg.norm(
+            (matrix[member_indices] - values) / safe_scales, axis=1
+        ) if member_indices else np.asarray([])
         profiles.append(
             {
                 'cluster': centroid['cluster'],
                 'size': size,
                 'percentage': round(size * 100 / run.sample_count, 2),
                 'characteristic': characteristic,
+                'highlights': highlights,
+                'centroid_values': [
+                    {'name': name, 'value': round(float(value), 4)}
+                    for name, value in zip(run.selected_columns, values, strict=True)
+                ],
+                'average_distance': (
+                    round(float(member_distances.mean()), 4)
+                    if len(member_distances) else None
+                ),
             }
         )
     return profiles
@@ -780,6 +1155,15 @@ def build_results_context(dataset, page_number=None):
         )
 
     matrix = _result_matrix(dataset, run)
+    contingency = run.contingency_matrix or {}
+    contingency_rows = [
+        {'category': category, 'values': values, 'total': sum(values)}
+        for category, values in zip(
+            contingency.get('categories', []),
+            contingency.get('values', []),
+            strict=True,
+        )
+    ]
     return {
         'kmeans_run': run,
         'kmeans_quality': _silhouette_interpretation(run.silhouette),
@@ -791,4 +1175,9 @@ def build_results_context(dataset, page_number=None):
             page.number, on_each_side=2, on_ends=1
         ),
         'kmeans_cluster_summaries': cluster_summaries,
+        'kmeans_selected_candidate': next(
+            (item for item in run.results_by_k if item.get('k') == run.cluster_count),
+            None,
+        ),
+        'kmeans_contingency_rows': contingency_rows,
     }

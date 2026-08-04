@@ -10,11 +10,6 @@ ALGORITHMS = {
         'related_name': 'kmeans_runs',
         'cluster_column': 'Cluster K-Means',
     },
-    'hierarchical': {
-        'label': 'Jerárquico',
-        'related_name': 'hierarchical_runs',
-        'cluster_column': 'Cluster Jerárquico',
-    },
 }
 
 

@@ -3,8 +3,6 @@
 
     // ── Tab auto-activation on hash change ──────────────────────────────────
     const activeHash = window.location.hash;
-    const urlParams = new URLSearchParams(window.location.search);
-    const resultsView = urlParams.get("results_view");
 
     const dashboardTabByHash = {
         "#data-pane": "data-tab",
@@ -18,30 +16,6 @@
         const tabId = dashboardTabByHash[activeHash];
         const tab = document.getElementById(tabId);
         if (tab) bootstrap.Tab.getOrCreateInstance(tab).show();
-    }
-
-    // When the results pane has both algorithms (Bootstrap pills), activate the
-    // correct pill based on the `results_view` query parameter.
-    if (activeHash === "#results-pane" && resultsView && window.bootstrap) {
-        const resultPillByAlgorithm = {
-            kmeans: "kmeans-results-tab",
-            hierarchical: "hierarchical-results-tab",
-        };
-        const pillId = resultPillByAlgorithm[resultsView];
-        const pill = document.getElementById(pillId);
-        if (pill) {
-            // Wait for Bootstrap tab to finish showing the pane before switching pill
-            const resultTab = document.getElementById("results-tab");
-            if (resultTab) {
-                resultTab.addEventListener(
-                    "shown.bs.tab",
-                    () => bootstrap.Tab.getOrCreateInstance(pill).show(),
-                    { once: true },
-                );
-            } else {
-                bootstrap.Tab.getOrCreateInstance(pill).show();
-            }
-        }
     }
 
     // ── K-Means result chart ────────────────────────────────────────────────
@@ -152,80 +126,42 @@
         });
     }
 
-    // ── Hierarchical result chart ───────────────────────────────────────────
-    const hierarchicalChartElement = document.getElementById("hierarchicalClusterChart");
-    const hierarchicalChartDataElement = document.getElementById("hierarchical-chart-data");
-    if (hierarchicalChartElement && hierarchicalChartDataElement && window.Chart) {
-        const chartData = JSON.parse(hierarchicalChartDataElement.textContent);
-        const colors = [
-            "#0057B8",
-            "#E66100",
-            "#009E73",
-            "#6A00A8",
-            "#D7191C",
-            "#8C564B",
-            "#00A6D6",
-            "#B28A00",
-            "#CC79A7",
-        ];
-        let colorIndex = 0;
-        const datasets = chartData.clusters.map((cluster) => {
-            const color = colors[colorIndex++ % colors.length];
-            return {
-                label: `Cluster ${cluster.cluster}`,
-                data: cluster.points,
-                backgroundColor: color,
-                borderColor: color,
-                pointStyle: "circle",
-                pointRadius: 4,
-                pointHoverRadius: 6,
-            };
-        });
-        new Chart(hierarchicalChartElement, {
-            type: "scatter",
-            data: {datasets},
+    const selectionCanvas = document.getElementById("kmeansSelectionChart");
+    const selectionDataElement = document.getElementById("kmeans-analysis-data");
+    if (selectionCanvas && selectionDataElement && window.Chart) {
+        const analysis = JSON.parse(selectionDataElement.textContent);
+        const candidates = analysis.results;
+        new Chart(selectionCanvas, {
+            type: "line",
+            data: {
+                labels: candidates.map((item) => `k=${item.k}`),
+                datasets: [
+                    {
+                        label: "Inercia (menor es mejor)",
+                        data: candidates.map((item) => item.inertia),
+                        borderColor: "#6c757d",
+                        backgroundColor: "#6c757d",
+                        yAxisID: "inertia",
+                        tension: 0.2,
+                    },
+                    {
+                        label: "Silueta (mayor es mejor)",
+                        data: candidates.map((item) => item.silhouette),
+                        borderColor: "#0057B8",
+                        backgroundColor: "#0057B8",
+                        yAxisID: "score",
+                        tension: 0.2,
+                    },
+                ],
+            },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                interaction: {mode: "nearest", intersect: true},
-                plugins: {
-                    legend: {
-                        position: "bottom",
-                        labels: {usePointStyle: true, boxWidth: 10},
-                    },
-                    tooltip: {
-                        callbacks: {
-                            title(items) {
-                                return items[0]?.raw
-                                    ? `Registro ${items[0].raw.row}`
-                                    : "";
-                            },
-                            label(context) {
-                                const point = context.raw;
-                                const coordinates = [
-                                    `${chartData.x_label}: ${Number(point.x).toFixed(3)}`,
-                                ];
-                                if (chartData.y_label) {
-                                    coordinates.push(
-                                        `${chartData.y_label}: ${Number(point.y).toFixed(3)}`,
-                                    );
-                                }
-                                return coordinates;
-                            },
-                        },
-                    },
-                },
+                interaction: {mode: "index", intersect: false},
+                plugins: {legend: {position: "bottom"}},
                 scales: {
-                    x: {title: {display: true, text: chartData.x_label}},
-                    y: {
-                        display: Boolean(chartData.y_label),
-                        title: {
-                            display: Boolean(chartData.y_label),
-                            text: chartData.y_label,
-                        },
-                        suggestedMin: chartData.y_label ? undefined : -1,
-                        suggestedMax: chartData.y_label ? undefined : 1,
-                    },
+                    inertia: {type: "linear", position: "left", title: {display: true, text: "Inercia"}},
+                    score: {type: "linear", position: "right", min: -1, max: 1, grid: {drawOnChartArea: false}, title: {display: true, text: "Silueta"}},
                 },
             },
         });
@@ -282,72 +218,16 @@
         });
         checkboxes.forEach((cb) => cb.addEventListener("change", updateCount));
         comparisonColumn?.addEventListener("change", updateComparisonColumn);
-        kmeansForm.addEventListener("submit", () => {
-            if (trainButton) {
-                trainButton.disabled = true;
-                trainButton.textContent = "Entrenando…";
+        kmeansForm.addEventListener("submit", (event) => {
+            const submitter = event.submitter;
+            if (submitter) {
+                submitter.disabled = true;
+                submitter.textContent = submitter.id === "analyzeKMeansButton"
+                    ? "Analizando…"
+                    : "Entrenando…";
             }
         });
         updateComparisonColumn();
     }
 
-    // ── Hierarchical form logic ──────────────────────────────────────────────
-    const hierarchicalForm = document.getElementById("hierarchicalTrainingForm");
-    if (hierarchicalForm) {
-        const checkboxes = [...hierarchicalForm.querySelectorAll(".hierarchical-column")];
-        const selectedCount = document.getElementById("hierarchicalSelectedCount");
-        const trainButton = document.getElementById("trainHierarchicalButton");
-        const comparisonColumn = document.getElementById("hierarchicalComparisonColumn");
-        const toggleColumnsButton = document.getElementById("toggleHierarchicalColumns");
-
-        const updateCount = () => {
-            const count = checkboxes.filter((cb) => cb.checked).length;
-            if (selectedCount) {
-                selectedCount.textContent =
-                    `${count} ${count === 1 ? "columna seleccionada" : "columnas seleccionadas"}`;
-            }
-            const availableCheckboxes = checkboxes.filter((cb) => !cb.disabled);
-            const allSelected =
-                availableCheckboxes.length > 0 &&
-                availableCheckboxes.every((cb) => cb.checked);
-            if (toggleColumnsButton) {
-                toggleColumnsButton.textContent = allSelected
-                    ? "Deseleccionar todas"
-                    : "Seleccionar todas";
-                toggleColumnsButton.disabled = availableCheckboxes.length === 0;
-            }
-        };
-
-        const updateComparisonColumn = () => {
-            const selectedComparison = comparisonColumn?.value || "";
-            checkboxes.forEach((checkbox) => {
-                const isComparison = checkbox.value === selectedComparison;
-                checkbox.disabled = isComparison;
-                if (isComparison) checkbox.checked = false;
-                checkbox.closest(".form-check")?.classList.toggle(
-                    "bg-body-tertiary",
-                    isComparison,
-                );
-            });
-            updateCount();
-        };
-
-        toggleColumnsButton?.addEventListener("click", () => {
-            const availableCheckboxes = checkboxes.filter((cb) => !cb.disabled);
-            const shouldSelect = !availableCheckboxes.every((cb) => cb.checked);
-            availableCheckboxes.forEach((cb) => {
-                cb.checked = shouldSelect;
-            });
-            updateCount();
-        });
-        checkboxes.forEach((cb) => cb.addEventListener("change", updateCount));
-        comparisonColumn?.addEventListener("change", updateComparisonColumn);
-        hierarchicalForm.addEventListener("submit", () => {
-            if (trainButton) {
-                trainButton.disabled = true;
-                trainButton.textContent = "Entrenando…";
-            }
-        });
-        updateComparisonColumn();
-    }
 })();
