@@ -8,6 +8,9 @@
             <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#equivalenceModal">
                 Configurar equivalencias
             </button>
+            <button class="btn btn-outline-success" type="button" data-bs-toggle="modal" data-bs-target="#syntheticDataModal">
+                Generar Datos Sintéticos
+            </button>
         {% if category_columns %}
             <div class="dropdown" style="width: 20rem; max-width: 100%;">
                 <button class="btn btn-outline-secondary dropdown-toggle d-flex align-items-center w-100"
@@ -61,18 +64,56 @@
                     </ul>
                 </div>
         {% endif %}
-        {% if selected_category %}
-            <a class="btn btn-success d-inline-flex align-items-center gap-2" href="{% url 'datasets:download' %}?{% if category_column %}{% if category_column != 'categoria' %}category_column={{ category_column|urlencode }}&amp;{% endif %}{% endif %}category={{ selected_category|urlencode }}&amp;representation={{ representation }}">
+            <a class="btn btn-success d-inline-flex align-items-center gap-2" href="{% url 'datasets:download' %}?{% if category_column %}{% if category_column != 'categoria' %}category_column={{ category_column|urlencode }}&amp;{% endif %}{% endif %}{% if selected_category %}category={{ selected_category|urlencode }}&amp;{% endif %}representation={{ representation }}">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
                     <path d="M.5 9.9a.5.5 0 0 1 .5.5V13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.6a.5.5 0 0 1 1 0V13a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.6a.5.5 0 0 1 .5-.5"/>
                     <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/>
                 </svg>
                 <span>Descargar Excel</span>
             </a>
-        {% endif %}
         </div>
     {% endif %}
 </div>
 
 {% include 'datasets/table.html' %}
 {% include 'datasets/equivalence_modal.html' %}
+
+<!-- Modal para Generar Datos Sintéticos -->
+<div class="modal fade" id="syntheticDataModal" tabindex="-1" aria-labelledby="syntheticDataModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{% url 'datasets:generate_synthetic' %}" method="post">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title" id="syntheticDataModalLabel">Generar Datos Sintéticos</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Este algoritmo dinámico inyecta ruido aleatorio controlado en los registros originales basado en la desviación estándar de cada variable.</p>
+                    <div class="mb-3">
+                        <label for="num_records" class="form-label">Cantidad de registros a generar:</label>
+                        <input type="number" class="form-control" id="num_records" name="num_records" min="1" max="10000" value="100" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="pivot_column" class="form-label">Agrupar correlaciones usando (Columna Pivote):</label>
+                        <select class="form-select" id="pivot_column" name="pivot_column">
+                            <option value="">No agrupar (Mezclar todo)</option>
+                            {% for column in category_columns %}
+                                <option value="{{ column.name }}" {% if 'signo zodiacal' in column.name|lower %}selected{% endif %}>{{ column.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="noise_level" class="form-label">Nivel de Ruido (Agresividad): <span id="noiseValue">0.5</span></label>
+                        <input type="range" class="form-range" id="noise_level" name="noise_level" min="0.1" max="2.0" step="0.1" value="0.5" oninput="document.getElementById('noiseValue').innerText = this.value">
+                        <div class="form-text">0.1 es muy conservador, 1.0 inyecta mucha variación matemática.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-success">Generar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

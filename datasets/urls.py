@@ -7,6 +7,7 @@ from .views import (
     EquivalenceRemoveApplicationView,
     EquivalenceSaveView,
     FilteredDatasetDownloadView,
+    GenerateSyntheticDataView,
 )
 
 app_name = 'datasets'
@@ -15,6 +16,7 @@ urlpatterns = [
     path('cargar/', DatasetUploadView.as_view(), name='upload'),
     path('eliminar/', DatasetDeleteView.as_view(), name='delete'),
     path('descargar/', FilteredDatasetDownloadView.as_view(), name='download'),
+    path('generar-sinteticos/', GenerateSyntheticDataView.as_view(), name='generate_synthetic'),
     path('equivalencias/guardar/', EquivalenceSaveView.as_view(), name='equivalence_save'),
     path(
         'equivalencias/<int:configuration_id>/eliminar/',
