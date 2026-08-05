@@ -3,6 +3,9 @@ import unicodedata
 
 from django.core.paginator import Paginator
 from django.db import transaction
+import random
+import statistics
+from datetime import datetime, timedelta
 
 from .equivalences import analyze_numeric_columns, transform_records
 from .models import Dataset, EquivalenceConfiguration
@@ -234,3 +237,119 @@ def build_equivalence_context(dataset):
         'numeric_columns': analyze_numeric_columns(dataset),
         'configurations': configurations,
     }
+
+
+def get_numeric_value(val):
+    try:
+        return float(val)
+    except:
+        return None
+
+def generate_synthetic_records(dataset, num_records_to_generate, pivot_column='', noise_level=0.5):
+    """Generate synthetic records based on the existing dataset and append them."""
+    if not dataset or not dataset.records:
+        return False
+
+    records = dataset.records
+    columns = dataset.columns
+
+    numeric_columns = []
+    categorical_columns = []
+    for col in columns:
+        if col.startswith("Marca") or col.startswith("Tipo"):
+            continue
+        if col.startswith("1. ") or col.startswith("Categoría") or col == pivot_column:
+            categorical_columns.append(col)
+            continue
+        numeric_columns.append(col)
+
+    if pivot_column and pivot_column in columns:
+        sign_column = pivot_column
+    else:
+        # Default to the first categorical column or 'All' if none exists
+        if categorical_columns:
+            sign_column = categorical_columns[0]
+        else:
+            sign_column = None
+
+    if not sign_column:
+        records_by_sign = {'All': records}
+    else:
+        records_by_sign = {}
+        for r in records:
+            sign = r.get(sign_column, 'Unknown')
+            if sign not in records_by_sign:
+                records_by_sign[sign] = []
+            records_by_sign[sign].append(r)
+
+    # Calculate statistics for numeric columns
+    numeric_stats = {}
+    for col in numeric_columns:
+        vals = []
+        is_all_ints = True
+        for r in records:
+            v = get_numeric_value(r.get(col))
+            if v is not None:
+                vals.append(v)
+                if not isinstance(v, int) and not v.is_integer():
+                    is_all_ints = False
+        if vals:
+            min_val = min(vals)
+            max_val = max(vals)
+            std_dev = statistics.stdev(vals) if len(vals) > 1 else 0.0
+            numeric_stats[col] = {
+                'min': min_val,
+                'max': max_val,
+                'std_dev': std_dev,
+                'is_int': is_all_ints
+            }
+
+    # Calculate frequencies for categorical columns
+    category_frequencies = {}
+    for col in categorical_columns:
+        counts = {}
+        for r in records:
+            val = r.get(col)
+            if val is not None:
+                counts[val] = counts.get(val, 0) + 1
+        category_frequencies[col] = counts
+
+    generated_records = []
+    for i in range(num_records_to_generate):
+        sign = random.choice(list(records_by_sign.keys()))
+        template = random.choice(records_by_sign[sign])
+        
+        new_record = template.copy()
+        
+        for col in numeric_columns:
+            val = get_numeric_value(template.get(col))
+            if val is not None and col in numeric_stats:
+                stats = numeric_stats[col]
+                # Inject proportional Gaussian noise
+                noise = random.gauss(0, stats['std_dev'] * noise_level)
+                new_val = val + noise
+                # Clamp to original min/max
+                new_val = max(stats['min'], min(stats['max'], new_val))
+                
+                if stats['is_int']:
+                    new_record[col] = str(int(round(new_val)))
+                else:
+                    new_record[col] = str(round(new_val, 4))
+
+        for col in categorical_columns:
+            if col == sign_column or col.startswith("Categoría") or col.startswith("2. "):
+                continue
+            if random.random() < 0.10 and category_frequencies.get(col):
+                choices = list(category_frequencies[col].keys())
+                weights = list(category_frequencies[col].values())
+                new_record[col] = random.choices(choices, weights=weights, k=1)[0]
+                
+        new_record["Marca temporal"] = (datetime.now() + timedelta(minutes=i)).isoformat()
+        new_record["Tipo de registro"] = "Sintético (Pruebas)"
+        
+        generated_records.append(new_record)
+
+    # Append to the original records and save
+    dataset.records.extend(generated_records)
+    dataset.save()
+    return True
