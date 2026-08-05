@@ -317,7 +317,7 @@ class DatasetViewTests(TestCase):
             '?category=agua&amp;representation=original&amp;page=2#dataset-table',
         )
 
-    def test_download_button_only_appears_with_an_active_filter(self):
+    def test_download_button_appears_with_or_without_an_active_filter(self):
         Dataset.objects.create(
             pk=1,
             source_name='categorias.csv',
@@ -330,7 +330,11 @@ class DatasetViewTests(TestCase):
             reverse('dashboard:index'), {'category': 'agua'}
         )
 
-        self.assertNotContains(unfiltered_response, 'Descargar Excel')
+        self.assertContains(unfiltered_response, 'Descargar Excel')
+        self.assertContains(
+            unfiltered_response,
+            '/datasets/descargar/?representation=original',
+        )
         self.assertContains(filtered_response, 'Descargar Excel')
         self.assertContains(
             filtered_response,
@@ -407,7 +411,7 @@ class DatasetViewTests(TestCase):
             ],
         )
 
-    def test_download_without_a_valid_filter_is_not_available(self):
+    def test_download_without_a_filter_exports_the_complete_dataset(self):
         Dataset.objects.create(
             pk=1,
             source_name='categorias.csv',
@@ -417,7 +421,11 @@ class DatasetViewTests(TestCase):
 
         response = self.client.get(reverse('datasets:download'))
 
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response['Content-Type'],
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
 
     def test_scale_columns_with_partial_observed_values_are_compatible(self):
         dataset = Dataset.objects.create(
