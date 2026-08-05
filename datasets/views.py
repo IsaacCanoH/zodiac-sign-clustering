@@ -22,6 +22,7 @@ from .services import (
     filter_dataset_by_category,
     remove_dataset,
     replace_dataset,
+    generate_synthetic_records,
 )
 
 
@@ -154,18 +155,17 @@ class FilteredDatasetDownloadView(View):
             request.GET.get('category_column'),
         )
         selected_category = category_filter['selected_category']
-        if not selected_category:
-            raise Http404('Selecciona una categoría válida para descargar.')
 
         representation = request.GET.get('representation', 'original')
         columns, records, active_representation = transform_records(
             dataset, category_filter['filtered_records'], representation
         )
         source_name = slugify(Path(dataset.source_name).stem) or 'dataset'
-        filename = (
-            f'{source_name}-{slugify(selected_category)}-'
-            f'{active_representation}.xlsx'
-        )
+        if selected_category:
+            filename = f'{source_name}-{slugify(selected_category)}-{active_representation}.xlsx'
+        else:
+            filename = f'{source_name}-completo-{active_representation}.xlsx'
+            
         response = HttpResponse(
             build_excel_file(columns, records),
             content_type=(
@@ -176,3 +176,35 @@ class FilteredDatasetDownloadView(View):
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
 
         return response
+
+
+class GenerateSyntheticDataView(View):
+    def post(self, request):
+        dataset = Dataset.objects.filter(pk=1).first()
+        if not dataset:
+            messages.error(request, 'No hay un dataset disponible para generar datos.')
+            return redirect('dashboard:index')
+
+        try:
+            num_records = int(request.POST.get('num_records', 0))
+        except ValueError:
+            num_records = 0
+            
+        pivot_column = request.POST.get('pivot_column', '')
+        
+        try:
+            noise_level = float(request.POST.get('noise_level', 0.5))
+        except ValueError:
+            noise_level = 0.5
+
+        if num_records <= 0:
+            messages.error(request, 'Cantidad de registros inválida.')
+            return redirect('dashboard:index')
+
+        success = generate_synthetic_records(dataset, num_records, pivot_column, noise_level)
+        if success:
+            messages.success(request, f'Se generaron exitosamente {num_records} registros sintéticos.')
+        else:
+            messages.error(request, 'Ocurrió un error al generar los datos sintéticos.')
+            
+        return redirect('dashboard:index')
