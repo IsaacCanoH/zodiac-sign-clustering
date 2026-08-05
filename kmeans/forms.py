@@ -10,7 +10,15 @@ class KMeansTrainingForm(forms.Form):
         initial='kmeans',
     )
     cluster_count = forms.IntegerField(min_value=2)
-    columns = forms.MultipleChoiceField()
+    columns = forms.MultipleChoiceField(
+        error_messages={
+            'required': (
+                'Selecciona al menos una columna numérica en la sección '
+                '“Columnas para el entrenamiento”.'
+            ),
+            'invalid_choice': 'Una de las columnas seleccionadas ya no está disponible.',
+        },
+    )
     comparison_column = forms.ChoiceField(required=False)
 
     def __init__(

@@ -673,7 +673,10 @@ class KMeansViewTests(TestCase):
             follow=True,
         )
 
-        self.assertContains(response, 'Este campo es obligatorio.')
+        self.assertContains(
+            response,
+            'selecciona al menos una columna numérica en “Columnas para el entrenamiento”',
+        )
         self.assertFalse(KMeansRun.objects.exists())
 
     def test_replacing_dataset_preserves_previous_training_model(self):
@@ -711,14 +714,15 @@ class KMeansViewTests(TestCase):
         self.assertEqual(response.request['PATH_INFO'], reverse('dashboard:index'))
         self.assertFalse(response.context['all_saved_models'][0]['compatible'])
 
-    def test_results_show_reset_training_button(self):
+    def test_results_do_not_show_training_action_buttons(self):
         dataset = self.create_dataset()
         train_kmeans(dataset, ['Edad', 'Puntaje'], 2)
 
         response = self.client.get(reverse('dashboard:index'))
 
-        self.assertContains(response, 'Reiniciar entrenamiento')
-        self.assertContains(response, reverse('kmeans:reset'))
+        self.assertNotContains(response, 'Nuevo entrenamiento')
+        self.assertNotContains(response, 'Reiniciar entrenamiento')
+        self.assertNotContains(response, reverse('kmeans:reset'))
 
     def test_results_can_be_downloaded_as_pdf(self):
         dataset = self.create_dataset()

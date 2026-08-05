@@ -20,10 +20,6 @@
             <a class="btn btn-outline-dark" href="{% url 'kmeans:results_pdf' kmeans_run.pk %}">
                 Descargar resultados PDF
             </a>
-            <a class="btn btn-outline-primary" href="{% url 'dashboard:index' %}#training-pane">Nuevo entrenamiento</a>
-            <button class="btn btn-outline-danger" type="button" data-bs-toggle="modal" data-bs-target="#resetKMeansModal">
-                Reiniciar entrenamiento
-            </button>
         </div>
     </div>
 
@@ -78,11 +74,7 @@
                 Evaluación interna mediante silueta
             </span>
         </div>
-        <div class="row g-3 mt-0">
-            <div class="col-md-4"><div class="border rounded-3 p-3 h-100"><span class="small text-secondary d-block">Davies-Bouldin <span title="Menor es mejor">ⓘ</span></span><strong>{{ kmeans_run.estimator_state.internal_metrics.davies_bouldin|floatformat:4 }}</strong></div></div>
-            <div class="col-md-4"><div class="border rounded-3 p-3 h-100"><span class="small text-secondary d-block">Calinski-Harabasz <span title="Mayor es mejor">ⓘ</span></span><strong>{{ kmeans_run.estimator_state.internal_metrics.calinski_harabasz|floatformat:2 }}</strong></div></div>
-            <div class="col-md-4"><div class="border rounded-3 p-3 h-100"><span class="small text-secondary d-block">Estabilidad entre inicializaciones</span><strong>ARI medio {{ kmeans_run.stability_metrics.mean_adjusted_rand|floatformat:4 }}</strong></div></div>
-        </div>
+        <p class="small text-secondary mt-3 mb-0">Estabilidad entre inicializaciones: <strong class="text-body">ARI medio {{ kmeans_run.stability_metrics.mean_adjusted_rand|floatformat:4 }}</strong></p>
     </section>
 
     {% if kmeans_run.results_by_k %}
@@ -93,7 +85,7 @@
         </div>
         <div class="card-body">
             {% if kmeans_run.cluster_count == kmeans_run.recommended_k_silhouette %}<p class="mb-3">El entrenamiento utilizó la recomendación principal basada en silueta.</p>{% else %}<p class="mb-3">Se utilizó una selección manual distinta de la recomendación por silueta. El resultado sigue siendo válido, pero conviene documentar la razón de negocio.</p>{% endif %}
-            <div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead class="table-light"><tr><th>k</th><th class="text-end">Inercia</th><th class="text-end">Silueta</th><th class="text-end">Davies-Bouldin</th><th class="text-end">Calinski-Harabasz</th><th class="text-end">Cluster menor</th></tr></thead><tbody>{% for candidate in kmeans_run.results_by_k %}{% if candidate.k > 1 %}<tr class="{% if candidate.k == kmeans_run.cluster_count %}table-primary{% endif %}"><th>{{ candidate.k }}</th><td class="text-end">{{ candidate.inertia|floatformat:2 }}</td><td class="text-end">{{ candidate.silhouette|floatformat:4 }}</td><td class="text-end">{{ candidate.davies_bouldin|floatformat:4 }}</td><td class="text-end">{{ candidate.calinski_harabasz|floatformat:2 }}</td><td class="text-end">{{ candidate.smallest_cluster }} ({{ candidate.smallest_cluster_percentage|floatformat:1 }}%)</td></tr>{% endif %}{% endfor %}</tbody></table></div>
+            <div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead class="table-light"><tr><th>k</th><th class="text-end">Inercia</th><th class="text-end">Silueta</th><th class="text-end">Cluster menor</th></tr></thead><tbody>{% for candidate in kmeans_run.results_by_k %}{% if candidate.k > 1 %}<tr class="{% if candidate.k == kmeans_run.cluster_count %}table-primary{% endif %}"><th>{{ candidate.k }}</th><td class="text-end">{{ candidate.inertia|floatformat:2 }}</td><td class="text-end">{{ candidate.silhouette|floatformat:4 }}</td><td class="text-end">{{ candidate.smallest_cluster }} ({{ candidate.smallest_cluster_percentage|floatformat:1 }}%)</td></tr>{% endif %}{% endfor %}</tbody></table></div>
         </div>
     </section>
     {% endif %}
@@ -242,26 +234,6 @@
         </section>
     {% endif %}
 
-    <div class="modal fade" id="resetKMeansModal" tabindex="-1" aria-labelledby="resetKMeansModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2 class="modal-title fs-5" id="resetKMeansModalLabel">Reiniciar entrenamiento</h2>
-                    <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-                </div>
-                <div class="modal-body">
-                    Se eliminarán los resultados actuales de K-Means. Esta acción no modifica el dataset cargado.
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
-                    <form method="post" action="{% url 'kmeans:reset' %}">
-                        {% csrf_token %}
-                        <button class="btn btn-danger" type="submit">Eliminar y reiniciar</button>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
 {% endif %}
 {% if kmeans_run.parent_run %}
 <div class="alert alert-info border">
@@ -278,16 +250,35 @@
 <section class="card mt-4">
     <div class="card-header bg-white"><h3 class="h6 fw-bold mb-0">Trazabilidad y reproducibilidad</h3></div>
     <div class="card-body">
+        <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 border rounded-3 bg-body-tertiary p-3 mb-3">
+            <div>
+                <span class="small text-secondary d-block">Variables de entrenamiento</span>
+                <strong>{{ kmeans_run.selected_columns|length }} variable{{ kmeans_run.selected_columns|length|pluralize:",s" }} seleccionada{{ kmeans_run.selected_columns|length|pluralize:",s" }}</strong>
+            </div>
+            <button class="btn btn-sm btn-outline-primary align-self-start align-self-sm-center" type="button" data-bs-toggle="collapse" data-bs-target="#kmeansVariablesDetail" aria-expanded="false" aria-controls="kmeansVariablesDetail">
+                Ver lista y orden
+            </button>
+        </div>
+        <div class="collapse mb-3" id="kmeansVariablesDetail">
+            <div class="border rounded-3 overflow-auto" style="max-height: 14rem;">
+                <ol class="list-group list-group-numbered list-group-flush">
+                    {% for column in kmeans_run.selected_columns %}
+                    <li class="list-group-item small text-break">{{ column }}</li>
+                    {% endfor %}
+                </ol>
+            </div>
+        </div>
         <div class="row g-3 small">
-            <div class="col-md-4"><span class="text-secondary d-block">Variables y orden</span>{{ kmeans_run.selected_columns|join:", " }}</div>
-            <div class="col-md-2"><span class="text-secondary d-block">Iteraciones</span>{{ kmeans_run.estimator_state.iterations }}</div>
-            <div class="col-md-2"><span class="text-secondary d-block">Duración</span>{{ kmeans_run.estimator_state.training_duration_seconds|floatformat:3 }} s</div>
-            <div class="col-md-2"><span class="text-secondary d-block">Inicialización</span>{{ kmeans_run.estimator_state.parameters.init }}</div>
-            <div class="col-md-2"><span class="text-secondary d-block">Semilla</span>{{ kmeans_run.estimator_state.parameters.random_state }}</div>
+            <div class="col-6 col-lg-3"><span class="text-secondary d-block">Iteraciones</span><strong>{{ kmeans_run.estimator_state.iterations }}</strong></div>
+            <div class="col-6 col-lg-3"><span class="text-secondary d-block">Duración</span><strong>{{ kmeans_run.estimator_state.training_duration_seconds|floatformat:3 }} s</strong></div>
+            <div class="col-6 col-lg-3"><span class="text-secondary d-block">Inicialización</span><strong>{{ kmeans_run.estimator_state.parameters.init }}</strong></div>
+            <div class="col-6 col-lg-3"><span class="text-secondary d-block">Semilla</span><strong>{{ kmeans_run.estimator_state.parameters.random_state }}</strong></div>
         </div>
         {% if kmeans_run.imputed_values %}<details class="mt-3"><summary class="fw-semibold small">Ver imputaciones realizadas</summary><ul class="small mb-0 mt-2">{% for column, info in kmeans_run.imputed_values.items %}<li>{{ column }}: {{ info.count }} valores sustituidos por la mediana {{ info.median }}</li>{% endfor %}</ul></details>{% endif %}
+        {% if kmeans_run.change_summary.identity_method %}
+        <p class="small text-secondary mb-0 mt-3 pt-3 border-top">Identidad para comparar versiones: {{ kmeans_run.change_summary.identity_method }}.</p>
+        {% endif %}
     </div>
-    <p class="small mb-0 mt-2">Identidad para comparar versiones: {{ kmeans_run.change_summary.identity_method }}.</p>
 </section>
 <section class="card border-primary mt-4">
     <div class="card-body">

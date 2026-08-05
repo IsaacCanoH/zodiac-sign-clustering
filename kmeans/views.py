@@ -47,6 +47,24 @@ def _training_form_data(request, *, cluster_count=None):
     }
 
 
+def _training_error_message(form, action):
+    """Return an actionable summary for the notification shown after a redirect."""
+    if form.errors.get('columns'):
+        return (
+            f'No se pudo {action}: selecciona al menos una columna numérica '
+            'en “Columnas para el entrenamiento”.'
+        )
+    if form.errors.get('cluster_count'):
+        return (
+            f'No se pudo {action}: selecciona una cantidad de clusters válida '
+            'para los registros disponibles.'
+        )
+    first_error = next(iter(form.errors.values()), None)
+    if first_error:
+        return f'No se pudo {action}: {first_error[0]}'
+    return f'No se pudo {action}. Revisa la configuración e inténtalo de nuevo.'
+
+
 class KMeansAnalysisView(View):
     """Evaluate candidate values of k without persisting a trained model."""
 
@@ -63,9 +81,12 @@ class KMeansAnalysisView(View):
             max_clusters=max(setup['max_clusters'], 2),
         )
         if not form.is_valid():
+            messages.error(request, _training_error_message(
+                form, 'analizar el número de clusters'
+            ))
             request.session['kmeans_form_state'] = {
                 'data': _training_form_data(request),
-                'errors': form.errors.get_json_data(),
+                'errors': {},
             }
             return _dashboard_redirect(
                 'training-pane', category=request.POST.get('category')
@@ -76,9 +97,12 @@ class KMeansAnalysisView(View):
                 request.POST.get('category'), request.POST.get('category_column'),
             )
         except KMeansTrainingError as error:
+            messages.error(
+                request, f'No se pudo analizar el número de clusters: {error}'
+            )
             request.session['kmeans_form_state'] = {
                 'data': _training_form_data(request),
-                'errors': {'__all__': [{'message': str(error), 'code': ''}]},
+                'errors': {},
             }
             return _dashboard_redirect(
                 'training-pane', category=request.POST.get('category')
@@ -92,6 +116,10 @@ class KMeansAnalysisView(View):
             ),
             'errors': {},
         }
+        messages.success(
+            request,
+            'Análisis completado. Revisa la recomendación antes de entrenar el modelo.',
+        )
         return _dashboard_redirect(
             'training-pane', category=request.POST.get('category')
         )
@@ -117,6 +145,9 @@ class KMeansTrainingView(View):
             max_clusters=max(setup['max_clusters'], 2),
         )
         if not form.is_valid():
+            messages.error(request, _training_error_message(
+                form, 'iniciar el entrenamiento'
+            ))
             request.session['kmeans_form_state'] = {
                 'data': {
                     'algorithm': request.POST.get('algorithm', 'kmeans'),
@@ -129,7 +160,7 @@ class KMeansTrainingView(View):
                         'comparison_column', ''
                     ),
                 },
-                'errors': form.errors.get_json_data(),
+                'errors': {},
             }
             return _dashboard_redirect(
                 'training-pane',
@@ -159,6 +190,7 @@ class KMeansTrainingView(View):
                 candidate_analysis=analysis,
             )
         except KMeansTrainingError as error:
+            messages.error(request, f'No se pudo entrenar el modelo: {error}')
             request.session['kmeans_form_state'] = {
                 'data': {
                     'algorithm': 'kmeans',
@@ -171,7 +203,7 @@ class KMeansTrainingView(View):
                         'comparison_column'
                     ],
                 },
-                'errors': {'__all__': [{'message': str(error), 'code': ''}]},
+                'errors': {},
             }
             return _dashboard_redirect(
                 'training-pane',
@@ -179,6 +211,10 @@ class KMeansTrainingView(View):
             )
 
         request.session.pop('kmeans_analysis_state', None)
+        messages.success(
+            request,
+            'Entrenamiento de K-Means realizado correctamente. Ya puedes revisar los resultados y guardar el modelo.',
+        )
         return _dashboard_redirect('results-pane', results_view='kmeans')
 
 
@@ -233,17 +269,15 @@ class KMeansImportView(View):
     def post(self, request):
         dataset = Dataset.objects.filter(pk=1).first()
         if not dataset:
-            request.session['model_import_error'] = 'No hay un dataset cargado.'
+            messages.error(request, 'No se puede importar el modelo porque no hay un dataset cargado.')
             return _dashboard_redirect('models-pane')
 
         uploaded = request.FILES.get('model_file')
         if not uploaded:
-            request.session['model_import_error'] = 'No se seleccionó ningún archivo.'
+            messages.error(request, 'Selecciona un archivo de modelo K-Means (.json) para continuar.')
             return _dashboard_redirect('models-pane')
         if uploaded.size > 5 * 1024 * 1024:
-            request.session['model_import_error'] = (
-                'El archivo supera el límite permitido de 5 MB.'
-            )
+            messages.error(request, 'El archivo supera el límite permitido de 5 MB.')
             return _dashboard_redirect('models-pane')
 
         try:
@@ -261,12 +295,10 @@ class KMeansImportView(View):
             ValidationError,
             DatabaseError,
         ):
-            request.session['model_import_error'] = (
-                'El archivo no es un modelo K-Means válido o está corrupto.'
-            )
+            messages.error(request, 'El archivo no es un modelo K-Means válido o está dañado.')
             return _dashboard_redirect('models-pane')
         except ValueError as error:
-            request.session['model_import_error'] = str(error)
+            messages.error(request, f'No se pudo importar el modelo: {error}')
             return _dashboard_redirect('models-pane')
 
         if request.POST.get('import_mode') == 'retrain':
@@ -275,6 +307,7 @@ class KMeansImportView(View):
                 'Modelo compatible importado. Ya puedes reentrenarlo desde el catálogo.',
             )
             return _dashboard_redirect('models-pane')
+        messages.success(request, 'Modelo importado correctamente. Ya puedes consultar sus resultados.')
         return _dashboard_redirect('results-pane', results_view='kmeans')
 
 
@@ -285,9 +318,7 @@ class KMeansActivateView(View):
         dataset = Dataset.objects.filter(pk=1).first()
         run = get_object_or_404(KMeansRun, pk=pk)
         if not run.is_saved:
-            request.session['model_action_error'] = (
-                'Guarda el modelo antes de crear una versión reentrenada.'
-            )
+            messages.warning(request, 'Guarda el modelo antes de cargar sus resultados.')
             return _dashboard_redirect('models-pane')
         requested_category = request.POST.get('category', run.category_filter)
         requested_category_column = request.POST.get(
@@ -303,13 +334,12 @@ class KMeansActivateView(View):
             ]
             if not compatibility['exact']:
                 reasons.insert(0, 'Este modelo pertenece a otro dataset.')
-            request.session['model_action_error'] = (
-                'No se puede activar: ' + ' '.join(reasons)
-            )
+            messages.warning(request, 'No se pueden cargar los resultados: ' + ' '.join(reasons))
             return _dashboard_redirect('models-pane')
         run.dataset = dataset
         run.activated_at = timezone.now()
         run.save(update_fields=('dataset', 'activated_at'))
+        messages.success(request, 'Resultados del modelo cargados correctamente.')
         return _dashboard_redirect('results-pane', results_view='kmeans')
 
 
@@ -328,9 +358,7 @@ class KMeansRetrainView(View):
             requested_category_column=requested_category_column,
         )
         if not compatibility['compatible']:
-            request.session['model_action_error'] = (
-                'No se puede reentrenar: ' + ' '.join(compatibility['reasons'])
-            )
+            messages.warning(request, 'No se puede reentrenar el modelo: ' + ' '.join(compatibility['reasons']))
             return _dashboard_redirect('models-pane')
         try:
             train_kmeans(
@@ -343,8 +371,9 @@ class KMeansRetrainView(View):
                 save_immediately=False,
             )
         except KMeansTrainingError as error:
-            request.session['model_action_error'] = str(error)
+            messages.error(request, f'No se pudo reentrenar el modelo: {error}')
             return _dashboard_redirect('models-pane')
+        messages.success(request, 'Modelo reentrenado correctamente. Revisa esta nueva versión en los resultados.')
         return _dashboard_redirect('results-pane', results_view='kmeans')
 
 
@@ -355,11 +384,11 @@ class KMeansSaveView(View):
         dataset = Dataset.objects.filter(pk=1).first()
         run = get_object_or_404(KMeansRun, pk=pk, dataset=dataset)
         if run.is_saved:
-            messages.info(request, 'Este modelo ya estaba guardado.')
+            messages.info(request, 'Este modelo ya estaba guardado en el catálogo.')
             return _dashboard_redirect('results-pane', results_view='kmeans')
         form = KMeansSaveForm(request.POST)
         if not form.is_valid():
-            messages.error(request, 'Indica un nombre válido para guardar el modelo.')
+            messages.error(request, 'Escribe un nombre para identificar el modelo antes de guardarlo.')
             return _dashboard_redirect('results-pane', results_view='kmeans')
         run.name = form.cleaned_data['name']
         run.topic = form.cleaned_data['topic']
@@ -369,7 +398,7 @@ class KMeansSaveView(View):
         run.save(update_fields=(
             'name', 'topic', 'description', 'is_saved', 'saved_at',
         ))
-        messages.success(request, 'El modelo se guardó en el catálogo.')
+        messages.success(request, 'Modelo guardado correctamente en el catálogo.')
         return _dashboard_redirect('results-pane', results_view='kmeans')
 
 
@@ -378,5 +407,6 @@ class KMeansDeleteView(View):
 
     def post(self, request, pk):
         KMeansRun.objects.filter(pk=pk).delete()
+        messages.success(request, 'Modelo eliminado del catálogo.')
         return _dashboard_redirect('models-pane')
 

@@ -9,6 +9,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     KeepTogether,
+    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -230,7 +231,8 @@ def build_kmeans_results_pdf(dataset, run):
         ['Fecha de entrenamiento', run.created_at.strftime('%d/%m/%Y %H:%M')],
         [
             'Variables',
-            ', '.join(run.selected_columns),
+            f'{len(run.selected_columns)} variables seleccionadas '
+            '(ver Anexo A: variables y orden).',
         ],
         ['Filtro aplicado', run.category_label or 'Todos los registros'],
         ['Método de visualización', chart['method']],
@@ -305,8 +307,7 @@ def build_kmeans_results_pdf(dataset, run):
     if run.results_by_k:
         diagnostic_rows = [
             [item['k'], f'{item["inertia"]:.2f}',
-             '-' if item.get('silhouette') is None else f'{item["silhouette"]:.4f}',
-             '-' if item.get('davies_bouldin') is None else f'{item["davies_bouldin"]:.4f}']
+             '-' if item.get('silhouette') is None else f'{item["silhouette"]:.4f}']
             for item in run.results_by_k
         ]
         story.extend([
@@ -319,10 +320,27 @@ def build_kmeans_results_pdf(dataset, run):
             ),
             Spacer(1, 2 * mm),
             _table(
-                ['k', 'Inercia', 'Silueta', 'Davies-Bouldin'],
-                diagnostic_rows, [22 * mm, 52 * mm, 50 * mm, 50 * mm], styles,
+                ['k', 'Inercia', 'Silueta'],
+                diagnostic_rows, [35 * mm, 70 * mm, 69 * mm], styles,
                 align_from=0,
             ),
         ])
+    variable_rows = [
+        [index, column]
+        for index, column in enumerate(run.selected_columns, start=1)
+    ]
+    story.extend([
+        PageBreak(),
+        Paragraph('Anexo A. Variables y orden de entrenamiento', styles['section']),
+        _p(
+            'Esta lista conserva el orden exacto de las variables usado para entrenar el modelo.',
+            styles['body'],
+        ),
+        Spacer(1, 2 * mm),
+        _table(
+            ['#', 'Variable'], variable_rows, [15 * mm, 159 * mm], styles,
+            align_from=0,
+        ),
+    ])
     document.build(story, onFirstPage=_footer, onLaterPages=_footer)
     return buffer.getvalue()

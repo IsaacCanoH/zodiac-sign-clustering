@@ -7,9 +7,89 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Panel de Análisis de Datos</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        #notificationContainer {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 1080;
+            width: min(24rem, calc(100vw - 2rem));
+        }
+
+        #notificationContainer .toast {
+            --notification-accent: #0d6efd;
+            overflow: hidden;
+            border: 0;
+            border-left: .3rem solid var(--notification-accent);
+            border-radius: .85rem;
+            box-shadow: 0 .7rem 1.8rem rgba(33, 37, 41, .18);
+            color: #212529;
+            background: #fff;
+        }
+
+        #notificationContainer .notification-success { --notification-accent: #198754; }
+        #notificationContainer .notification-danger { --notification-accent: #dc3545; }
+        #notificationContainer .notification-warning { --notification-accent: #d39e00; }
+        #notificationContainer .notification-info { --notification-accent: #0d6efd; }
+
+        .notification-icon {
+            display: grid;
+            flex: 0 0 auto;
+            place-items: center;
+            width: 2.25rem;
+            height: 2.25rem;
+            border-radius: 50%;
+            color: var(--notification-accent);
+            background: color-mix(in srgb, var(--notification-accent) 12%, white);
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+
+        .notification-title {
+            color: #212529;
+            font-size: .875rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .notification-text {
+            color: #5c636a;
+            font-size: .825rem;
+            line-height: 1.35;
+        }
+
+        .notification-progress {
+            height: .2rem;
+            width: 100%;
+            transform-origin: left;
+            background: var(--notification-accent);
+            animation: notification-countdown 6s linear forwards;
+        }
+
+        @keyframes notification-countdown {
+            from { transform: scaleX(1); }
+            to { transform: scaleX(0); }
+        }
+    </style>
 </head>
 
 <body class="bg-body-tertiary">
+    <div id="notificationContainer" class="toast-container" aria-live="polite" aria-atomic="true">
+        {% for message in messages %}
+        <div class="toast notification-{% if message.tags == 'error' %}danger{% elif message.tags == 'warning' %}warning{% elif message.tags == 'success' %}success{% else %}info{% endif %}"
+            role="alert" data-autohide="true" data-bs-delay="6000">
+            <div class="d-flex align-items-start gap-2 p-3 pb-2">
+                <span class="notification-icon" aria-hidden="true">{% if message.tags == 'error' %}!{% elif message.tags == 'warning' %}!{% elif message.tags == 'success' %}✓{% else %}i{% endif %}</span>
+                <div class="flex-grow-1 pt-1">
+                    <div class="notification-title">{% if message.tags == 'error' %}No se pudo completar{% elif message.tags == 'warning' %}Atención{% elif message.tags == 'success' %}Operación completada{% else %}Información{% endif %}</div>
+                    <div class="notification-text mt-1">{{ message }}</div>
+                </div>
+                <button type="button" class="btn-close btn-sm mt-1" data-bs-dismiss="toast" aria-label="Cerrar"></button>
+            </div>
+            <div class="notification-progress"></div>
+        </div>
+        {% endfor %}
+    </div>
     <nav class="navbar navbar-expand-lg bg-dark navbar-dark shadow-sm">
         <div class="container-xl py-2">
             <a class="navbar-brand fw-semibold" href="{% url 'dashboard:index' %}">Panel de Análisis de Datos</a>
@@ -18,13 +98,6 @@
     </nav>
 
     <main class="container-xl py-4 py-lg-5">
-        {% for message in messages %}
-        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-            {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
-        </div>
-        {% endfor %}
-
         <header class="row align-items-center g-3 mb-4">
             <div class="col-lg-8">
                 <p class="text-uppercase text-primary fw-semibold small mb-2">Espacio de trabajo</p>
@@ -173,7 +246,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <script src="{% static 'datasets/equivalences.js' %}?v=2"></script>
+    <script src="{% static 'datasets/equivalences.js' %}?v=3"></script>
     <script src="{% static 'descriptive_statistics/charts.js' %}"></script>
     <script src="{% static 'kmeans/workspace.js' %}?v=18"></script>
 
@@ -184,7 +257,34 @@
     {% endif %}
 
     <script>
+        // Al volver con Atrás/Adelante, algunos navegadores restauran la
+        // pantalla anterior desde su caché. Esa copia puede conservar el
+        // botón como “Entrenando…” y no incluir los resultados recién creados.
+        // Recargamos solo en ese caso para consultar el estado real al servidor.
+        window.addEventListener("pageshow", function (event) {
+            if (event.persisted) {
+                window.location.reload();
+            }
+        });
+
         document.addEventListener("DOMContentLoaded", function () {
+            document.querySelectorAll("#notificationContainer .toast").forEach(function (element) {
+                bootstrap.Toast.getOrCreateInstance(element).show();
+            });
+
+            // Mantiene la pestaña actual en la URL. Sin esto, al recargar se
+            // reutilizaba un fragmento anterior (por ejemplo, Estadística)
+            // aunque el usuario estuviera viendo Resultados.
+            document.querySelectorAll('#dashboardTabs [data-bs-toggle="tab"]').forEach(function (tab) {
+                tab.addEventListener("shown.bs.tab", function (event) {
+                    const target = event.target.getAttribute("data-bs-target");
+                    if (!target || window.location.hash === target) return;
+                    const url = new URL(window.location.href);
+                    url.hash = target;
+                    window.history.replaceState(null, "", url);
+                });
+            });
+
             let hash = window.location.hash;
             if (hash) {
                 let tabTrigger = document.querySelector('button[data-bs-target="' + hash + '"]');
@@ -195,6 +295,28 @@
             }
 
         });
+
+        window.showNotification = function (message, type = "danger") {
+            const container = document.getElementById("notificationContainer");
+            if (!container || !message) return;
+            const color = {error: "danger", info: "info", warning: "warning", success: "success"}[type] || "danger";
+            const details = {
+                danger: {icon: "!", title: "No se pudo completar"},
+                warning: {icon: "!", title: "Atención"},
+                success: {icon: "✓", title: "Operación completada"},
+                info: {icon: "i", title: "Información"},
+            }[color];
+            const toast = document.createElement("div");
+            toast.className = "toast notification-" + color;
+            toast.setAttribute("role", "alert");
+            toast.innerHTML = '<div class="d-flex align-items-start gap-2 p-3 pb-2"><span class="notification-icon" aria-hidden="true"></span><div class="flex-grow-1 pt-1"><div class="notification-title"></div><div class="notification-text mt-1"></div></div><button type="button" class="btn-close btn-sm mt-1" data-bs-dismiss="toast" aria-label="Cerrar"></button></div><div class="notification-progress"></div>';
+            toast.querySelector(".notification-icon").textContent = details.icon;
+            toast.querySelector(".notification-title").textContent = details.title;
+            toast.querySelector(".notification-text").textContent = message;
+            container.appendChild(toast);
+            toast.addEventListener("hidden.bs.toast", () => toast.remove());
+            bootstrap.Toast.getOrCreateInstance(toast, {delay: 6000}).show();
+        };
     </script>
 </body>
 

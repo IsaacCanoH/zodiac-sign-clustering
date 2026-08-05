@@ -1,16 +1,3 @@
-{% if model_import_error %}
-<div class="alert alert-danger alert-dismissible fade show" role="alert">
-    <strong>Error al importar:</strong> {{ model_import_error }}
-    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
-</div>
-{% endif %}
-{% if model_action_error %}
-<div class="alert alert-warning alert-dismissible fade show" role="alert">
-    {{ model_action_error }}
-    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
-</div>
-{% endif %}
-
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3 mb-4">
     <div>
         <h2 class="h5 fw-bold mb-1">Modelos guardados de K-Means</h2>

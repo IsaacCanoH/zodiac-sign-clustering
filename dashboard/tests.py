@@ -99,9 +99,10 @@ class DashboardViewTests(TestCase):
         self.assertFalse(item['compatible'])
         self.assertContains(response, 'El filtro actual no coincide')
 
-        self.client.post(
+        response = self.client.post(
             reverse('kmeans:retrain', args=[run.pk]),
             {'category': 'tierra'},
+            follow=True,
         )
         self.assertEqual(KMeansRun.objects.count(), 1)
-        self.assertIn('model_action_error', self.client.session)
+        self.assertContains(response, 'No se puede reentrenar el modelo:')

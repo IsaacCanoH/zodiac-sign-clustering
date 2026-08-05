@@ -57,6 +57,11 @@
     }
 
     function showAlert(message, type = "danger") {
+        if (window.showNotification) {
+            window.showNotification(message, type);
+            hideAlert();
+            return;
+        }
         elements.alert.className = `alert alert-${type}`;
         elements.alert.textContent = message;
     }
