@@ -298,9 +298,7 @@ def build_kmeans_results_pdf(dataset, run):
             _p(
                 'La pureza describe predominancia por cluster y no equivale a '
                 'precisión de un clasificador supervisado. '
-                f'ARI: {run.external_metrics.get("adjusted_rand", "-")}; '
-                f'NMI: {run.external_metrics.get("normalized_mutual_information", "-")}; '
-                f'V-measure: {run.external_metrics.get("v_measure", "-")}.',
+                f'ARI: {run.external_metrics.get("adjusted_rand", "-")}.',
                 styles['body'],
             ),
         ])

@@ -74,7 +74,6 @@
                 Evaluación interna mediante silueta
             </span>
         </div>
-        <p class="small text-secondary mt-3 mb-0">Estabilidad entre inicializaciones: <strong class="text-body">ARI medio {{ kmeans_run.stability_metrics.mean_adjusted_rand|floatformat:4 }}</strong></p>
     </section>
 
     {% if kmeans_run.results_by_k %}
@@ -210,10 +209,7 @@
             {% if kmeans_run.external_metrics %}
             <div class="card-body border-top">
                 <div class="row g-3 mb-3">
-                    <div class="col-6 col-lg-3"><span class="small text-secondary d-block">Adjusted Rand (ARI)</span><strong>{{ kmeans_run.external_metrics.adjusted_rand|floatformat:4 }}</strong></div>
-                    <div class="col-6 col-lg-3"><span class="small text-secondary d-block">Información mutua normalizada</span><strong>{{ kmeans_run.external_metrics.normalized_mutual_information|floatformat:4 }}</strong></div>
-                    <div class="col-6 col-lg-3"><span class="small text-secondary d-block">Homogeneidad</span><strong>{{ kmeans_run.external_metrics.homogeneity|floatformat:4 }}</strong></div>
-                    <div class="col-6 col-lg-3"><span class="small text-secondary d-block">Completitud / V-measure</span><strong>{{ kmeans_run.external_metrics.completeness|floatformat:4 }} / {{ kmeans_run.external_metrics.v_measure|floatformat:4 }}</strong></div>
+                    <div class="col-12 col-lg-3"><span class="small text-secondary d-block">Adjusted Rand (ARI)</span><strong>{{ kmeans_run.external_metrics.adjusted_rand|floatformat:4 }}</strong></div>
                 </div>
                 {% if kmeans_contingency_rows %}<details><summary class="fw-semibold">Ver matriz de contingencia</summary><div class="table-responsive mt-2"><table class="table table-sm table-bordered text-center mb-0"><thead class="table-light"><tr><th class="text-start">Categoría</th>{% for cluster in kmeans_run.contingency_matrix.clusters %}<th>Cluster {{ cluster }}</th>{% endfor %}<th>Total</th></tr></thead><tbody>{% for row in kmeans_contingency_rows %}<tr><th class="text-start">{{ row.category }}</th>{% for value in row.values %}<td>{{ value }}</td>{% endfor %}<td class="fw-semibold">{{ row.total }}</td></tr>{% endfor %}</tbody></table></div></details>{% endif %}
                 <p class="small text-secondary mt-3 mb-0">Estas son métricas externas de acuerdo con una categoría conocida. La categoría no participó en el entrenamiento. La medida antes descrita como "Coincidencia general" se presenta correctamente como pureza global y no equivale a precisión supervisada.</p>
