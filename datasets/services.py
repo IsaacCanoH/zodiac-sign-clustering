@@ -27,6 +27,10 @@ CATEGORY_NAME_PRIORITY = {
     'class': 2,
     'classes': 2,
 }
+ELEMENT_FILTER_PREFIX_PRIORITY = {
+    'elemento': 3,
+    'elementos': 3,
+}
 
 
 def replace_dataset(cleaned_data):
@@ -64,11 +68,16 @@ def _normalized_name_words(value):
 
 
 def _category_name_priority(column):
-    matches = (
+    words = _normalized_name_words(column)
+    matches = [
         CATEGORY_NAME_PRIORITY[word]
-        for word in _normalized_name_words(column)
+        for word in words
         if word in CATEGORY_NAME_PRIORITY
-    )
+    ]
+    # “Elemento” es significativo únicamente como nombre inicial de la
+    # columna; así no se sugieren campos genéricos como “tipo de elemento”.
+    if words and words[0] in ELEMENT_FILTER_PREFIX_PRIORITY:
+        matches.append(ELEMENT_FILTER_PREFIX_PRIORITY[words[0]])
     return min(matches, default=None)
 
 

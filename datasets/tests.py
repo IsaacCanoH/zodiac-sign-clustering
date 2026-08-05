@@ -58,6 +58,28 @@ class DatasetViewTests(TestCase):
 
         self.assertEqual(result['category_column'], 'Grupo')
 
+    def test_element_prefixes_are_suggested_case_insensitively(self):
+        columns = ['Tipo de elemento', 'ELEMENTOS químicos', 'Elemento base']
+        dataset = Dataset.objects.create(
+            pk=1, source_name='elementos.csv', columns=columns,
+            records=[
+                {column: 'A' if index < 2 else 'B' for column in columns}
+                for index in range(4)
+            ],
+        )
+
+        result = filter_dataset_by_category(dataset)
+
+        self.assertEqual(result['category_column'], 'Elemento base')
+        self.assertEqual(
+            [(item['name'], item['suggested']) for item in result['category_columns']],
+            [
+                ('Elemento base', True),
+                ('ELEMENTOS químicos', True),
+                ('Tipo de elemento', False),
+            ],
+        )
+
     def test_user_can_select_any_low_cardinality_filter_column(self):
         dataset = Dataset.objects.create(
             pk=1, source_name='generico.csv',
