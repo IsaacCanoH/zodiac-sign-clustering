@@ -6,7 +6,7 @@ def build_workspace_context(request):
     """Return everything required to render the dataset workspace."""
     context = build_dataset_context(
         page_number=request.GET.get('page'),
-        requested_category=request.GET.get('category'),
+        requested_category=request.GET.getlist('category'),
         requested_category_column=request.GET.get('category_column'),
         requested_representation=request.GET.get('representation', 'original'),
     )

@@ -20,13 +20,13 @@
                         Columna: {{ category_column|default:"Seleccionar" }}
                     </span>
                 </button>
-                <ul class="dropdown-menu w-100">
+                <ul class="dropdown-menu w-100" style="max-height: min(20rem, calc(100vh - 10rem)); overflow-y: auto; overflow-x: hidden;">
                     {% for column in category_columns %}
                         <li><a class="dropdown-item d-flex align-items-center gap-2{% if column.name == category_column %} active{% endif %}"
                             title="{{ column.name }} ({{ column.unique_count }})"
                             href="?category_column={{ column.name|urlencode }}&amp;representation={{ representation }}#dataset-table">
                             <span class="text-truncate flex-grow-1">{{ column.name }} ({{ column.unique_count }})</span>
-                            {% if column.suggested %}<span class="badge text-bg-primary">Sugerida</span>{% endif %}
+                            {% if column.suggested %}<span class="badge text-bg-primary flex-shrink-0">Sugerida</span>{% endif %}
                         </a></li>
                     {% endfor %}
                 </ul>
@@ -34,19 +34,23 @@
         {% endif %}
         {% if category_options %}
             <div class="dropdown">
-                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                    Categoría: {% if selected_category %}{{ selected_category_label }}{% else %}Todos{% endif %}
+                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+                    Categorías: {% if selected_categories %}{{ selected_category_label }}{% else %}Todos{% endif %}
                 </button>
-                <ul class="dropdown-menu dropdown-menu-end">
-                    <li>
-                        <a class="dropdown-item{% if not selected_category %} active{% endif %}" href="?{% if category_column %}{% if category_column != 'categoria' %}category_column={{ category_column|urlencode }}&amp;{% endif %}{% endif %}representation={{ representation }}#dataset-table">Todos</a>
-                    </li>
-                    {% for option in category_options %}
-                        <li>
-                            <a class="dropdown-item{% if option.value == selected_category %} active{% endif %}" href="?{% if category_column %}{% if category_column != 'categoria' %}category_column={{ category_column|urlencode }}&amp;{% endif %}{% endif %}category={{ option.value|urlencode }}&amp;representation={{ representation }}#dataset-table">{{ option.label }}</a>
-                        </li>
-                    {% endfor %}
-                </ul>
+                <div class="dropdown-menu dropdown-menu-end p-2" style="min-width: 12rem;">
+                    <a class="dropdown-item rounded{% if not selected_categories %} active{% endif %}" href="?{% if category_column %}{% if category_column != 'categoria' %}category_column={{ category_column|urlencode }}&amp;{% endif %}{% endif %}representation={{ representation }}#dataset-table">Todos</a>
+                    <form method="get" class="pt-1">
+                        {% if category_column and category_column != 'categoria' %}<input type="hidden" name="category_column" value="{{ category_column }}">{% endif %}
+                        <input type="hidden" name="representation" value="{{ representation }}">
+                        {% for option in category_options %}
+                            <label class="dropdown-item d-flex align-items-center gap-2 rounded">
+                                <input class="form-check-input mt-0" type="checkbox" name="category" value="{{ option.value }}"{% if option.value in selected_categories %} checked{% endif %}>
+                                <span>{{ option.label }}</span>
+                            </label>
+                        {% endfor %}
+                        <button class="btn btn-primary btn-sm w-100 mt-2" type="submit">Aplicar filtro</button>
+                    </form>
+                </div>
             </div>
         {% endif %}
         {% if has_equivalence_applications %}
@@ -58,13 +62,13 @@
                         {% else %}Original{% endif %}
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item{% if representation == 'original' %} active{% endif %}" href="?{% if category_column %}{% if category_column != 'categoria' %}category_column={{ category_column|urlencode }}&amp;{% endif %}{% endif %}{% if selected_category %}category={{ selected_category|urlencode }}&amp;{% endif %}representation=original#dataset-table">Datos originales</a></li>
-                        <li><a class="dropdown-item{% if representation == 'quantitative' %} active{% endif %}" href="?{% if category_column %}{% if category_column != 'categoria' %}category_column={{ category_column|urlencode }}&amp;{% endif %}{% endif %}{% if selected_category %}category={{ selected_category|urlencode }}&amp;{% endif %}representation=quantitative#dataset-table">Datos cuantitativos</a></li>
-                        <li><a class="dropdown-item{% if representation == 'qualitative' %} active{% endif %}" href="?{% if category_column %}{% if category_column != 'categoria' %}category_column={{ category_column|urlencode }}&amp;{% endif %}{% endif %}{% if selected_category %}category={{ selected_category|urlencode }}&amp;{% endif %}representation=qualitative#dataset-table">Datos cualitativos</a></li>
+                        <li><a class="dropdown-item{% if representation == 'original' %} active{% endif %}" href="?{% if category_column %}{% if category_column != 'categoria' %}category_column={{ category_column|urlencode }}&amp;{% endif %}{% endif %}{% if selected_category_query %}{{ selected_category_query }}&amp;{% endif %}representation=original#dataset-table">Datos originales</a></li>
+                        <li><a class="dropdown-item{% if representation == 'quantitative' %} active{% endif %}" href="?{% if category_column %}{% if category_column != 'categoria' %}category_column={{ category_column|urlencode }}&amp;{% endif %}{% endif %}{% if selected_category_query %}{{ selected_category_query }}&amp;{% endif %}representation=quantitative#dataset-table">Datos cuantitativos</a></li>
+                        <li><a class="dropdown-item{% if representation == 'qualitative' %} active{% endif %}" href="?{% if category_column %}{% if category_column != 'categoria' %}category_column={{ category_column|urlencode }}&amp;{% endif %}{% endif %}{% if selected_category_query %}{{ selected_category_query }}&amp;{% endif %}representation=qualitative#dataset-table">Datos cualitativos</a></li>
                     </ul>
                 </div>
         {% endif %}
-            <a class="btn btn-success d-inline-flex align-items-center gap-2" href="{% url 'datasets:download' %}?{% if category_column %}{% if category_column != 'categoria' %}category_column={{ category_column|urlencode }}&amp;{% endif %}{% endif %}{% if selected_category %}category={{ selected_category|urlencode }}&amp;{% endif %}representation={{ representation }}">
+            <a class="btn btn-success d-inline-flex align-items-center gap-2" href="{% url 'datasets:download' %}?{% if category_column %}{% if category_column != 'categoria' %}category_column={{ category_column|urlencode }}&amp;{% endif %}{% endif %}{% if selected_category_query %}{{ selected_category_query }}&amp;{% endif %}representation={{ representation }}">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">
                     <path d="M.5 9.9a.5.5 0 0 1 .5.5V13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.6a.5.5 0 0 1 1 0V13a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.6a.5.5 0 0 1 .5-.5"/>
                     <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/>

@@ -304,6 +304,31 @@ class DatasetViewTests(TestCase):
             ['Uno', 'Dos', 'Tres'],
         )
 
+    def test_category_filter_accepts_multiple_selected_categories(self):
+        Dataset.objects.create(
+            pk=1,
+            source_name='categorias.csv',
+            columns=['categoria', 'nombre'],
+            records=[
+                {'categoria': 'Agua', 'nombre': 'Uno'},
+                {'categoria': 'Aire', 'nombre': 'Dos'},
+                {'categoria': 'Fuego', 'nombre': 'Tres'},
+            ],
+        )
+
+        response = self.client.get(
+            reverse('dashboard:index'),
+            {'category': ['agua', 'aire']},
+        )
+
+        self.assertEqual(response.context['selected_categories'], ['agua', 'aire'])
+        self.assertEqual(response.context['selected_category_label'], 'Agua, Aire')
+        self.assertEqual(response.context['page_obj'].paginator.count, 2)
+        self.assertContains(
+            response,
+            'category=agua&amp;category=aire&amp;representation=original',
+        )
+
     def test_unknown_category_falls_back_to_all_records(self):
         Dataset.objects.create(
             pk=1,

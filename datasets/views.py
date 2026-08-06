@@ -153,10 +153,11 @@ class FilteredDatasetDownloadView(View):
             raise Http404('No hay un dataset disponible.')
 
         category_filter = filter_dataset_by_category(
-            dataset, request.GET.get('category'),
+            dataset, request.GET.getlist('category'),
             request.GET.get('category_column'),
         )
         selected_category = category_filter['selected_category']
+        selected_categories = category_filter['selected_categories']
 
         representation = request.GET.get('representation', 'original')
         columns, records, active_representation = transform_records(
@@ -165,6 +166,8 @@ class FilteredDatasetDownloadView(View):
         source_name = slugify(Path(dataset.source_name).stem) or 'dataset'
         if selected_category:
             filename = f'{source_name}-{slugify(selected_category)}-{active_representation}.xlsx'
+        elif selected_categories:
+            filename = f'{source_name}-filtrado-{active_representation}.xlsx'
         else:
             filename = f'{source_name}-completo-{active_representation}.xlsx'
             

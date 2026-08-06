@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from urllib.parse import urlencode
 
 from django.core.paginator import Paginator
 from django.db import transaction
@@ -132,7 +133,7 @@ def _build_category_options(records, category_column):
 def filter_dataset_by_category(
     dataset, requested_category=None, requested_category_column=None
 ):
-    """Return category metadata and records matching a valid category."""
+    """Return category metadata and records matching valid selected categories."""
     category_columns = _category_columns(dataset)
     allowed_columns = {item['name'] for item in category_columns}
     category_column = (
@@ -146,18 +147,35 @@ def filter_dataset_by_category(
         else []
     )
     available_categories = {option['value'] for option in category_options}
-    normalized_request = _normalize_category(requested_category or '')
+    if isinstance(requested_category, str):
+        requested_categories = [requested_category]
+    else:
+        requested_categories = requested_category or []
+    selected_categories = []
+    for category in requested_categories:
+        normalized_category = _normalize_category(category)
+        if (
+            normalized_category in available_categories
+            and normalized_category not in selected_categories
+        ):
+            selected_categories.append(normalized_category)
+
     selected_category = (
-        normalized_request if normalized_request in available_categories else ''
+        selected_categories[0] if len(selected_categories) == 1 else ''
+    )
+    selected_category_label = ', '.join(
+        option['label']
+        for option in category_options
+        if option['value'] in selected_categories
     )
 
     filtered_records = dataset.records
-    if selected_category:
+    if selected_categories:
         filtered_records = [
             record
             for record in dataset.records
             if _normalize_category(record.get(category_column, ''))
-            == selected_category
+            in selected_categories
         ]
 
     return {
@@ -165,7 +183,11 @@ def filter_dataset_by_category(
         'category_columns': category_columns,
         'category_options': category_options,
         'selected_category': selected_category,
-        'selected_category_label': selected_category.capitalize(),
+        'selected_categories': selected_categories,
+        'selected_category_label': selected_category_label,
+        'selected_category_query': urlencode(
+            [('category', category) for category in selected_categories]
+        ),
         'filtered_records': filtered_records,
     }
 
